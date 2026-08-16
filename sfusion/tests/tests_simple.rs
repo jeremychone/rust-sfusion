@@ -119,3 +119,28 @@ fn test_sfusion_svg_to_sfusion_nested_group_transforms() -> Result<()> {
 
 	Ok(())
 }
+
+#[test]
+fn test_sfusion_svg_to_sfusion_sanitized_keys() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r#"
+		<svg viewBox="0 0 400 400">
+			<g id="3d-main layer">
+				<path id="sub-item.1" d="M 10 10 L 20 20 Z"/>
+				<rect id="icon#2@home!" x="30" y="30" width="10" height="10"/>
+			</g>
+		</svg>
+	"#;
+
+	// -- Exec
+	let fusion_script = sfusion::svg_to_sfusion(svg_content)?;
+
+	// -- Check
+	assert!(fusion_script.contains("_3d_main_layer = sMerge {"));
+	assert!(fusion_script.contains("sub_item_1 = sPolygon {"));
+	assert!(fusion_script.contains("icon_2_home_ = sPolygon {"));
+	assert!(fusion_script.contains("SourceOp = \"sub_item_1\""));
+	assert!(fusion_script.contains("SourceOp = \"icon_2_home_\""));
+
+	Ok(())
+}
