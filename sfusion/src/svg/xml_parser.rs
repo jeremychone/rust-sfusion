@@ -32,9 +32,11 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 					b"g" => {
 						let id = get_attribute_str(e, b"id")?;
 						let transform = get_attribute_transform(e)?;
+						let stroke_width = get_attribute_stroke_width(e)?;
 						group_stack.push(SvgGroup {
 							id,
 							transform,
+							stroke_width,
 							children: Vec::new(),
 						});
 					}
@@ -109,11 +111,12 @@ fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElem
 	let local_name = e.local_name();
 	let id = get_attribute_str(e, b"id")?;
 	let transform = get_attribute_transform(e)?;
+	let stroke_width = get_attribute_stroke_width(e)?;
 
 	match local_name.as_ref() {
 		b"path" => {
 			let d = get_attribute_str(e, b"d")?.unwrap_or_default();
-			Ok(Some(SvgElement::Path(SvgPath { id, transform, d })))
+			Ok(Some(SvgElement::Path(SvgPath { id, transform, stroke_width, d })))
 		}
 		b"rect" => {
 			let x = get_attribute_f64(e, b"x")?.unwrap_or(0.0);
@@ -125,6 +128,7 @@ fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElem
 			Ok(Some(SvgElement::Rect(SvgRect {
 				id,
 				transform,
+				stroke_width,
 				x,
 				y,
 				width,
@@ -137,31 +141,31 @@ fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElem
 			let cx = get_attribute_f64(e, b"cx")?.unwrap_or(0.0);
 			let cy = get_attribute_f64(e, b"cy")?.unwrap_or(0.0);
 			let r = get_attribute_f64(e, b"r")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Circle(SvgCircle { id, transform, cx, cy, r })))
+			Ok(Some(SvgElement::Circle(SvgCircle { id, transform, stroke_width, cx, cy, r })))
 		}
 		b"ellipse" => {
 			let cx = get_attribute_f64(e, b"cx")?.unwrap_or(0.0);
 			let cy = get_attribute_f64(e, b"cy")?.unwrap_or(0.0);
 			let rx = get_attribute_f64(e, b"rx")?.unwrap_or(0.0);
 			let ry = get_attribute_f64(e, b"ry")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Ellipse(SvgEllipse { id, transform, cx, cy, rx, ry })))
+			Ok(Some(SvgElement::Ellipse(SvgEllipse { id, transform, stroke_width, cx, cy, rx, ry })))
 		}
 		b"line" => {
 			let x1 = get_attribute_f64(e, b"x1")?.unwrap_or(0.0);
 			let y1 = get_attribute_f64(e, b"y1")?.unwrap_or(0.0);
 			let x2 = get_attribute_f64(e, b"x2")?.unwrap_or(0.0);
 			let y2 = get_attribute_f64(e, b"y2")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Line(SvgLine { id, transform, x1, y1, x2, y2 })))
+			Ok(Some(SvgElement::Line(SvgLine { id, transform, stroke_width, x1, y1, x2, y2 })))
 		}
 		b"polyline" => {
 			let points_str = get_attribute_str(e, b"points")?.unwrap_or_default();
 			let points = parse_points_list(&points_str);
-			Ok(Some(SvgElement::Polyline(SvgPolyline { id, transform, points })))
+			Ok(Some(SvgElement::Polyline(SvgPolyline { id, transform, stroke_width, points })))
 		}
 		b"polygon" => {
 			let points_str = get_attribute_str(e, b"points")?.unwrap_or_default();
 			let points = parse_points_list(&points_str);
-			Ok(Some(SvgElement::Polygon(SvgPolygon { id, transform, points })))
+			Ok(Some(SvgElement::Polygon(SvgPolygon { id, transform, stroke_width, points })))
 		}
 		_ => Ok(None),
 	}
@@ -194,6 +198,33 @@ fn get_attribute_transform(e: &quick_xml::events::BytesStart<'_>) -> Result<Opti
 	} else {
 		Ok(None)
 	}
+}
+
+fn get_attribute_stroke_width(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<f64>> {
+	if let Some(val) = get_attribute_f64(e, b"stroke-width")? {
+		return Ok(Some(val));
+	}
+
+	if let Some(style_str) = get_attribute_str(e, b"style")?
+		&& let Some(val) = parse_style_stroke_width(&style_str)
+	{
+		return Ok(Some(val));
+	}
+
+	Ok(None)
+}
+
+fn parse_style_stroke_width(style: &str) -> Option<f64> {
+	for decl in style.split(';') {
+		let mut parts = decl.splitn(2, ':');
+		if let Some(key) = parts.next()
+			&& let Some(val) = parts.next()
+			&& key.trim() == "stroke-width"
+		{
+			return parse_dimension(val);
+		}
+	}
+	None
 }
 
 fn parse_view_box(s: &str) -> Option<SvgViewBox> {
@@ -358,6 +389,43 @@ mod tests {
 				assert_eq!(r.height, 60.0);
 			}
 			_ => return Err("Expected Rect element".into()),
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_svg_parser_stroke_width() -> Result<()> {
+		// -- Setup & Fixtures
+		let xml = r#"<svg viewBox="0 0 100 100">
+			<g id="g1" stroke-width="2.5">
+				<path id="p1" d="M 0 0 L 10 10" stroke-width="1.0"/>
+				<rect id="r1" x="0" y="0" width="10" height="10" style="stroke-width: 3.5px; fill: none"/>
+			</g>
+		</svg>"#;
+
+		// -- Exec
+		let doc = parse_svg(xml)?;
+
+		// -- Check
+		assert_eq!(doc.elements.len(), 1);
+		if let SvgElement::Group(g) = &doc.elements[0] {
+			assert_eq!(g.stroke_width, Some(2.5));
+			assert_eq!(g.children.len(), 2);
+
+			if let SvgElement::Path(p) = &g.children[0] {
+				assert_eq!(p.stroke_width, Some(1.0));
+			} else {
+				return Err("Expected path child".into());
+			}
+
+			if let SvgElement::Rect(r) = &g.children[1] {
+				assert_eq!(r.stroke_width, Some(3.5));
+			} else {
+				return Err("Expected rect child".into());
+			}
+		} else {
+			return Err("Expected group element".into());
 		}
 
 		Ok(())

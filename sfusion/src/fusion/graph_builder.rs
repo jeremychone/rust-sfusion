@@ -268,11 +268,13 @@ mod tests {
 				SvgElement::Path(SvgPath {
 					id: Some("poly_1".to_string()),
 					transform: None,
+					stroke_width: None,
 					d: "M 10 20 L 30 40 Z".to_string(),
 				}),
 				SvgElement::Rect(SvgRect {
 					id: Some("grabber".to_string()),
 					transform: None,
+					stroke_width: None,
 					x: 10.0,
 					y: 20.0,
 					width: 50.0,
@@ -327,9 +329,11 @@ mod tests {
 			elements: vec![SvgElement::Group(SvgGroup {
 				id: Some("grabber".to_string()),
 				transform: None,
+				stroke_width: None,
 				children: vec![SvgElement::Circle(SvgCircle {
 					id: None,
 					transform: None,
+					stroke_width: None,
 					cx: 50.0,
 					cy: 50.0,
 					r: 25.0,

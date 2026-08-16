@@ -86,6 +86,7 @@ pub fn circle_to_segments(circle: &SvgCircle) -> Vec<NormalizedSegment> {
 	ellipse_to_segments(&SvgEllipse {
 		id: circle.id.clone(),
 		transform: circle.transform,
+		stroke_width: circle.stroke_width,
 		cx: circle.cx,
 		cy: circle.cy,
 		rx: circle.r,
@@ -185,6 +186,7 @@ mod tests {
 		let rect = SvgRect {
 			id: None,
 			transform: None,
+			stroke_width: None,
 			x: 10.0,
 			y: 20.0,
 			width: 100.0,
@@ -213,6 +215,7 @@ mod tests {
 		let rect = SvgRect {
 			id: None,
 			transform: None,
+			stroke_width: None,
 			x: 0.0,
 			y: 0.0,
 			width: 100.0,
@@ -240,6 +243,7 @@ mod tests {
 		let circle = SvgCircle {
 			id: None,
 			transform: None,
+			stroke_width: None,
 			cx: 50.0,
 			cy: 50.0,
 			r: 25.0,
@@ -262,6 +266,7 @@ mod tests {
 		let line = SvgLine {
 			id: None,
 			transform: None,
+			stroke_width: None,
 			x1: 10.0,
 			y1: 20.0,
 			x2: 30.0,
@@ -270,11 +275,13 @@ mod tests {
 		let polyline = SvgPolyline {
 			id: None,
 			transform: None,
+			stroke_width: None,
 			points: vec![(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)],
 		};
 		let polygon = SvgPolygon {
 			id: None,
 			transform: None,
+			stroke_width: None,
 			points: vec![(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)],
 		};
 

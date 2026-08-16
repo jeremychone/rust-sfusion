@@ -79,6 +79,7 @@ pub enum SvgElement {
 pub struct SvgPath {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
+	pub stroke_width: Option<f64>,
 	pub d: String,
 }
 
@@ -86,6 +87,7 @@ pub struct SvgPath {
 pub struct SvgRect {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
+	pub stroke_width: Option<f64>,
 	pub x: f64,
 	pub y: f64,
 	pub width: f64,
@@ -98,6 +100,7 @@ pub struct SvgRect {
 pub struct SvgCircle {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
+	pub stroke_width: Option<f64>,
 	pub cx: f64,
 	pub cy: f64,
 	pub r: f64,
@@ -107,6 +110,7 @@ pub struct SvgCircle {
 pub struct SvgEllipse {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
+	pub stroke_width: Option<f64>,
 	pub cx: f64,
 	pub cy: f64,
 	pub rx: f64,
@@ -117,6 +121,7 @@ pub struct SvgEllipse {
 pub struct SvgLine {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
+	pub stroke_width: Option<f64>,
 	pub x1: f64,
 	pub y1: f64,
 	pub x2: f64,
@@ -127,6 +132,7 @@ pub struct SvgLine {
 pub struct SvgPolyline {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
+	pub stroke_width: Option<f64>,
 	pub points: Vec<(f64, f64)>,
 }
 
@@ -134,6 +140,7 @@ pub struct SvgPolyline {
 pub struct SvgPolygon {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
+	pub stroke_width: Option<f64>,
 	pub points: Vec<(f64, f64)>,
 }
 
@@ -141,6 +148,7 @@ pub struct SvgPolygon {
 pub struct SvgGroup {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
+	pub stroke_width: Option<f64>,
 	pub children: Vec<SvgElement>,
 }
 
