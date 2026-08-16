@@ -31,9 +31,8 @@ pub fn build_fusion_doc(svg_doc: &SvgDoc) -> Result<FusionDoc> {
 	let mut top_output_names = Vec::new();
 
 	for element in &svg_doc.elements {
-		if let Some(out_name) = builder.process_element(element, &view_box, Transform2D::identity(), &SvgStyle::default())? {
-			top_output_names.push(out_name);
-		}
+		let names = builder.process_element(element, &view_box, Transform2D::identity(), &SvgStyle::default())?;
+		top_output_names.extend(names);
 	}
 
 	// Sort sPolygon tools alphabetically, followed by sMerge tools
@@ -83,7 +82,7 @@ impl GraphBuilder {
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
 		parent_style: &SvgStyle,
-	) -> Result<Option<String>> {
+	) -> Result<Vec<String>> {
 		match element {
 			SvgElement::Group(group) => self.process_group(group, view_box, parent_tf, parent_style),
 			_ => self.process_shape(element, view_box, parent_tf, parent_style),
@@ -96,7 +95,7 @@ impl GraphBuilder {
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
 		parent_style: &SvgStyle,
-	) -> Result<Option<String>> {
+	) -> Result<Vec<String>> {
 		let elem_tf = get_element_transform(element).unwrap_or_default();
 		let total_tf = parent_tf.multiply(&elem_tf);
 
@@ -108,17 +107,24 @@ impl GraphBuilder {
 
 		let polylines = segments_to_polylines(&transformed_segments, view_box);
 		if polylines.is_empty() {
-			return Ok(None);
+			return Ok(Vec::new());
 		}
 
 		let explicit_id = get_element_id(element);
 		let effective_style = element.style().inherit_from(parent_style);
-		let border_width = effective_style.stroke_width.map(|sw| {
+		let border_width = if effective_style.stroke.as_ref().is_some_and(|s| *s != SvgPaint::None) {
+			let sw = effective_style.stroke_width.unwrap_or(1.0);
 			let max_dim = view_box.width.max(view_box.height);
 			let denom = if max_dim == 0.0 { 1.0 } else { max_dim };
-			sw / denom
-		});
-		let (red, green, blue, opacity) = resolve_color_and_opacity(&effective_style);
+			Some(sw / denom)
+		} else {
+			effective_style.stroke_width.map(|sw| {
+				let max_dim = view_box.width.max(view_box.height);
+				let denom = if max_dim == 0.0 { 1.0 } else { max_dim };
+				sw / denom
+			})
+		};
+		let (red, green, blue, opacity) = resolve_color_and_opacity(element.style(), &effective_style);
 		let (mask_width, mask_height) = view_box.scaled_1080p_dimensions();
 		let mut shape_tool_names = Vec::new();
 
@@ -144,19 +150,7 @@ impl GraphBuilder {
 			shape_tool_names.push(name);
 		}
 
-		if shape_tool_names.len() > 1 {
-			let merge_name = self.name_tracker.generate_unique_name(explicit_id.or(Some("smerge")));
-			let pos = self.next_merge_pos();
-			let s_merge = SMerge {
-				name: merge_name.clone(),
-				inputs: shape_tool_names,
-				view_info: pos,
-			};
-			self.tools.push(FusionTool::SMerge(s_merge));
-			Ok(Some(merge_name))
-		} else {
-			Ok(shape_tool_names.pop())
-		}
+		Ok(shape_tool_names)
 	}
 
 	fn process_group(
@@ -165,7 +159,7 @@ impl GraphBuilder {
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
 		parent_style: &SvgStyle,
-	) -> Result<Option<String>> {
+	) -> Result<Vec<String>> {
 		let group_tf = group.transform.unwrap_or_default();
 		let total_tf = parent_tf.multiply(&group_tf);
 		let effective_style = group.style.inherit_from(parent_style);
@@ -173,13 +167,12 @@ impl GraphBuilder {
 		let mut child_names = Vec::new();
 
 		for child in &group.children {
-			if let Some(name) = self.process_element(child, view_box, total_tf, &effective_style)? {
-				child_names.push(name);
-			}
+			let names = self.process_element(child, view_box, total_tf, &effective_style)?;
+			child_names.extend(names);
 		}
 
 		if child_names.is_empty() {
-			return Ok(None);
+			return Ok(Vec::new());
 		}
 
 		if child_names.len() == 1 {
@@ -208,7 +201,7 @@ impl GraphBuilder {
 				}
 				child_name = new_name;
 			}
-			return Ok(Some(child_name));
+			return Ok(vec![child_name]);
 		}
 
 		let group_id = group.id.as_deref().or(Some("smerge"));
@@ -222,7 +215,7 @@ impl GraphBuilder {
 		};
 
 		self.tools.push(FusionTool::SMerge(s_merge));
-		Ok(Some(merge_name))
+		Ok(vec![merge_name])
 	}
 }
 
@@ -277,13 +270,14 @@ fn get_element_id(element: &SvgElement) -> Option<&str> {
 }
 
 fn resolve_color_and_opacity(
-	style: &SvgStyle,
+	element_style: &SvgStyle,
+	effective_style: &SvgStyle,
 ) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
 	let resolve_paint = |paint: &Option<SvgPaint>| -> Option<SvgColor> {
 		match paint {
 			Some(SvgPaint::Color(c)) => Some(c.clone()),
 			Some(SvgPaint::CurrentColor) => {
-				let color_val = style
+				let color_val = effective_style
 					.extra
 					.as_ref()
 					.and_then(|m| m.get("color"))
@@ -294,11 +288,31 @@ fn resolve_color_and_opacity(
 		}
 	};
 
-	let (paint_color, is_stroke) = match (&style.fill, &style.stroke) {
-		(Some(SvgPaint::Color(_)), _) | (Some(SvgPaint::CurrentColor), _) => (resolve_paint(&style.fill), false),
-		(Some(SvgPaint::None), Some(stroke)) if *stroke != SvgPaint::None => (resolve_paint(&style.stroke), true),
-		(None, Some(stroke)) if *stroke != SvgPaint::None => (resolve_paint(&style.stroke), true),
-		_ => (None, false),
+	let child_has_stroke = element_style
+		.stroke
+		.as_ref()
+		.is_some_and(|s| *s != SvgPaint::None);
+	let child_has_fill = element_style.fill.is_some();
+
+	let (paint_color, is_stroke) = if child_has_stroke && !child_has_fill {
+		(resolve_paint(&effective_style.stroke), true)
+	} else {
+		match (&effective_style.fill, &effective_style.stroke) {
+			(Some(SvgPaint::Color(_)), _) | (Some(SvgPaint::CurrentColor), _) => {
+				(resolve_paint(&effective_style.fill), false)
+			}
+			(Some(SvgPaint::None), Some(stroke)) if *stroke != SvgPaint::None => {
+				(resolve_paint(&effective_style.stroke), true)
+			}
+			(None, Some(stroke)) if *stroke != SvgPaint::None => {
+				(resolve_paint(&effective_style.stroke), true)
+			}
+			(Some(SvgPaint::None), _) => (None, false),
+			(None, None) | (None, Some(SvgPaint::None)) => {
+				(Some(SvgColor::new_rgb(0, 0, 0)), false)
+			}
+			_ => (None, false),
+		}
 	};
 
 	let (red, green, blue, color_alpha) = if let Some(c) = paint_color {
@@ -312,11 +326,11 @@ fn resolve_color_and_opacity(
 		(None, None, None, None)
 	};
 
-	let mut effective_op = style.opacity;
+	let mut effective_op = effective_style.opacity;
 	let specific_op = if is_stroke {
-		style.stroke_opacity
+		effective_style.stroke_opacity
 	} else {
-		style.fill_opacity
+		effective_style.fill_opacity
 	};
 
 	if let Some(spec_op) = specific_op {
@@ -799,6 +813,59 @@ mod tests {
 	}
 
 	#[test]
+	fn test_fusion_graph_builder_multi_polyline_inside_group_flattens() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 100.0, 100.0)),
+			width: Some(100.0),
+			height: Some(100.0),
+			defs: SvgDefs::default(),
+			elements: vec![SvgElement::Group(SvgGroup {
+				id: Some("crabby_group".to_string()),
+				transform: None,
+				style: SvgStyle::default(),
+				children: vec![
+					SvgElement::Path(SvgPath {
+						id: Some("body".to_string()),
+						transform: None,
+						style: SvgStyle::default(),
+						d: "M 0 0 L 10 10 M 20 20 L 30 30".to_string(),
+					}),
+					SvgElement::Circle(SvgCircle {
+						id: Some("eye".to_string()),
+						transform: None,
+						style: SvgStyle::default(),
+						cx: 50.0,
+						cy: 50.0,
+						r: 5.0,
+					}),
+				],
+			})],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		// Tools: body, body_1, eye (3 polygons) + crabby_group (1 merge). Total: 4 tools
+		assert_eq!(fusion_doc.tools.len(), 4);
+		let merge_tools: Vec<&SMerge> = fusion_doc
+			.tools
+			.iter()
+			.filter_map(|t| match t {
+				FusionTool::SMerge(m) => Some(m),
+				_ => None,
+			})
+			.collect();
+
+		assert_eq!(merge_tools.len(), 1);
+		assert_eq!(merge_tools[0].name, "crabby_group");
+		assert_eq!(merge_tools[0].inputs, vec!["body", "body_1", "eye"]);
+
+		Ok(())
+	}
+
+	#[test]
 	fn test_fusion_graph_builder_current_color_and_hsl() -> Result<()> {
 		// -- Setup & Fixtures
 		let svg_doc = SvgDoc {
@@ -869,6 +936,125 @@ mod tests {
 			assert_eq!(p2.opacity, Some(0.5));
 		} else {
 			return Err("Expected hsl_path SPolygon".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_default_fill_and_stroke_priority() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 100.0, 100.0)),
+			width: Some(100.0),
+			height: Some(100.0),
+			defs: SvgDefs::default(),
+			elements: vec![
+				SvgElement::Rect(SvgRect {
+					id: Some("black_default".to_string()),
+					transform: None,
+					style: SvgStyle::default(),
+					x: 0.0,
+					y: 0.0,
+					width: 10.0,
+					height: 10.0,
+					rx: None,
+					ry: None,
+				}),
+				SvgElement::Group(SvgGroup {
+					id: Some("parent_grp".to_string()),
+					transform: None,
+					style: SvgStyle {
+						fill: Some(SvgPaint::Color(SvgColor::new_rgb(255, 128, 0))),
+						..Default::default()
+					},
+					children: vec![SvgElement::Path(SvgPath {
+						id: Some("white_stroke".to_string()),
+						transform: None,
+						style: SvgStyle {
+							stroke: Some(SvgPaint::Color(SvgColor::new_rgb(255, 255, 255))),
+							stroke_width: Some(2.0),
+							..Default::default()
+						},
+						d: "M 10 10 L 20 20".to_string(),
+					})],
+				}),
+			],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
+			assert_eq!(p1.name, "black_default");
+			assert_eq!(p1.red, Some(0.0));
+			assert_eq!(p1.green, Some(0.0));
+			assert_eq!(p1.blue, Some(0.0));
+		} else {
+			return Err("Expected black_default SPolygon".into());
+		}
+
+		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
+			assert_eq!(p2.name, "parent_grp");
+			assert_eq!(p2.red, Some(1.0));
+			assert_eq!(p2.green, Some(1.0));
+			assert_eq!(p2.blue, Some(1.0));
+		} else {
+			return Err("Expected parent_grp SPolygon".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_open_curve_and_border_width() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 200.0, 200.0)),
+			width: Some(200.0),
+			height: Some(200.0),
+			defs: SvgDefs::default(),
+			elements: vec![
+				SvgElement::Path(SvgPath {
+					id: Some("open_stroke".to_string()),
+					transform: None,
+					style: SvgStyle {
+						stroke: Some(SvgPaint::Color(SvgColor::new_rgb(255, 255, 255))),
+						..Default::default()
+					},
+					d: "M 10 20 C 30 40 50 60 70 80".to_string(),
+				}),
+				SvgElement::Path(SvgPath {
+					id: Some("closed_poly".to_string()),
+					transform: None,
+					style: SvgStyle::default(),
+					d: "M 10 20 L 30 40 L 50 20 Z".to_string(),
+				}),
+			],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
+			assert_eq!(p1.name, "closed_poly");
+			assert!(p1.closed);
+		} else {
+			return Err("Expected closed_poly SPolygon".into());
+		}
+
+		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
+			assert_eq!(p2.name, "open_stroke");
+			assert!(!p2.closed);
+			// Default stroke width = 1.0 / 200.0 = 0.005
+			assert_eq!(p2.border_width, Some(1.0 / 200.0));
+			assert_eq!(p2.red, Some(1.0));
+			assert_eq!(p2.green, Some(1.0));
+			assert_eq!(p2.blue, Some(1.0));
+		} else {
+			return Err("Expected open_stroke SPolygon".into());
 		}
 
 		Ok(())

@@ -137,3 +137,44 @@ fn test_references_colors_and_opacity_integration() -> Result<()> {
 
 	Ok(())
 }
+
+#[test]
+fn test_ref_02_crabby_grouping_and_styling() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = include_str!("data/references/ref-02.svg");
+
+	// -- Exec
+	let actual_fusion = sfusion::svg_to_sfusion(svg_content)?;
+
+	// -- Check
+	// 1. Root structure and group merge
+	assert!(actual_fusion.contains("crabby_final = sMerge {"));
+	// Ensure no intermediate redundant smerge exists inside crabby_final
+	assert!(!actual_fusion.contains("smerge = sMerge {"));
+
+	// 2. All 9 polygon tools flattened directly into crabby_final merge inputs
+	assert!(actual_fusion.contains("poly_1 = sPolygon {"));
+	assert!(actual_fusion.contains("poly_2 = sPolygon {"));
+	assert!(actual_fusion.contains("poly_3 = sPolygon {"));
+	assert!(actual_fusion.contains("poly_4 = sPolygon {"));
+	assert!(actual_fusion.contains("poly_5 = sPolygon {"));
+	assert!(actual_fusion.contains("poly_6 = sPolygon {"));
+	assert!(actual_fusion.contains("poly_7 = sPolygon {"));
+	assert!(actual_fusion.contains("poly_8 = sPolygon {"));
+	assert!(actual_fusion.contains("poly_9 = sPolygon {"));
+
+	assert!(actual_fusion.contains("SourceOp = \"poly_1\""));
+	assert!(actual_fusion.contains("SourceOp = \"poly_2\""));
+	assert!(actual_fusion.contains("SourceOp = \"poly_3\""));
+	assert!(actual_fusion.contains("SourceOp = \"poly_4\""));
+	assert!(actual_fusion.contains("SourceOp = \"poly_5\""));
+	assert!(actual_fusion.contains("SourceOp = \"poly_6\""));
+	assert!(actual_fusion.contains("SourceOp = \"poly_7\""));
+	assert!(actual_fusion.contains("SourceOp = \"poly_8\""));
+	assert!(actual_fusion.contains("SourceOp = \"poly_9\""));
+
+	// 3. Black pupil shapes (poly_4, poly_5) have explicit black RGB inputs
+	assert!(actual_fusion.contains("Red = Input { Value = 0, },\n\t\t\t\tGreen = Input { Value = 0, },\n\t\t\t\tBlue = Input { Value = 0, },"));
+
+	Ok(())
+}
