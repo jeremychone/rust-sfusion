@@ -11,5 +11,7 @@ unsafe_code = "forbid"
 # unused = { level = "allow", priority = -1 } # For exploratory dev.
 
 [dependencies]
+# -- Content Formats
+quick-xml = "0.37"
 # -- Others
 derive_more = { version = "2", features = ["from", "display"] }
