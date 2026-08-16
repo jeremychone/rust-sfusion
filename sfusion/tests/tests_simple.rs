@@ -64,7 +64,7 @@ fn test_sfusion_svg_to_sfusion_polyline_and_polygon() -> Result<()> {
 	// -- Check
 	assert!(fusion_script.contains("poly_1 = sPolygon {"));
 	assert!(fusion_script.contains("triangle = sPolygon {"));
-	assert!(fusion_script.contains("loop = sMerge {"));
+	assert!(fusion_script.contains("smerge = sMerge {"));
 	assert!(fusion_script.contains("SourceOp = \"poly_1\""));
 	assert!(fusion_script.contains("SourceOp = \"triangle\""));
 
@@ -160,7 +160,7 @@ fn test_sfusion_svg_to_sfusion_layer_ordering_z_index() -> Result<()> {
 	let fusion_script = sfusion::svg_to_sfusion(svg_content)?;
 
 	// -- Check
-	assert!(fusion_script.contains("loop = sMerge {"));
+	assert!(fusion_script.contains("smerge = sMerge {"));
 	assert!(fusion_script.contains("Input1 = Input {\n\t\t\t\t\tSourceOp = \"bg_layer\","));
 	assert!(fusion_script.contains("Input2 = Input {\n\t\t\t\t\tSourceOp = \"mid_layer\","));
 	assert!(fusion_script.contains("Input3 = Input {\n\t\t\t\t\tSourceOp = \"top_layer\","));

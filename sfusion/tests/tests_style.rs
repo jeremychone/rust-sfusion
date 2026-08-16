@@ -142,7 +142,7 @@ fn test_style_svg_gradient_defs_and_paint_url() -> Result<()> {
 
 	assert!(fusion_script.contains("bg_card = sPolygon {"));
 	assert!(fusion_script.contains("center_glow = sPolygon {"));
-	assert!(fusion_script.contains("loop = sMerge {"));
+	assert!(fusion_script.contains("smerge = sMerge {"));
 
 	Ok(())
 }

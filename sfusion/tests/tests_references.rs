@@ -66,7 +66,7 @@ fn test_references_complex_multi_layer_and_color_carryover() -> Result<()> {
 	assert!(fusion_script.contains("card_badge = sPolygon {"));
 	assert!(fusion_script.contains("card_accent = sPolygon {"));
 	assert!(fusion_script.contains("card_group = sMerge {"));
-	assert!(fusion_script.contains("loop = sMerge {"));
+	assert!(fusion_script.contains("smerge = sMerge {"));
 
 	// 2. Layer ordering in card_group sMerge: bottom (card_bg) -> middle (card_badge) -> top (card_accent)
 	assert!(fusion_script.contains("Input1 = Input {\n\t\t\t\t\tSourceOp = \"card_bg\","));

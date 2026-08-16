@@ -46,7 +46,7 @@ pub fn build_fusion_doc(svg_doc: &SvgDoc) -> Result<FusionDoc> {
 
 	// If there are multiple top-level elements without a containing group, merge them
 	if top_output_names.len() > 1 {
-		let merge_name = builder.name_tracker.generate_unique_name(Some("loop"));
+		let merge_name = builder.name_tracker.generate_unique_name(Some("smerge"));
 		let pos = builder.next_merge_pos();
 		let s_merge = SMerge {
 			name: merge_name,
@@ -145,7 +145,7 @@ impl GraphBuilder {
 		}
 
 		if shape_tool_names.len() > 1 {
-			let merge_name = self.name_tracker.generate_unique_name(explicit_id.or(Some("loop")));
+			let merge_name = self.name_tracker.generate_unique_name(explicit_id.or(Some("smerge")));
 			let pos = self.next_merge_pos();
 			let s_merge = SMerge {
 				name: merge_name.clone(),
@@ -211,7 +211,7 @@ impl GraphBuilder {
 			return Ok(Some(child_name));
 		}
 
-		let group_id = group.id.as_deref().or(Some("loop"));
+		let group_id = group.id.as_deref().or(Some("smerge"));
 		let merge_name = self.name_tracker.generate_unique_name(group_id);
 		let pos = self.next_merge_pos();
 
@@ -395,7 +395,7 @@ mod tests {
 		}
 
 		if let FusionTool::SMerge(m) = &fusion_doc.tools[2] {
-			assert_eq!(m.name, "loop");
+			assert_eq!(m.name, "smerge");
 			assert_eq!(m.inputs, vec!["poly_1", "grabber"]);
 			assert_eq!(m.view_info.pos_x, 2090.0);
 			assert_eq!(m.view_info.pos_y, -181.5);
