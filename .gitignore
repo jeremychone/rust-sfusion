@@ -29,6 +29,7 @@
 tmp/
 dist/
 out/
+**/tests/data/.tmp/
 *.lock
 *.lockb
 *.log

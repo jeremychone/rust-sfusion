@@ -5,11 +5,12 @@ use std::fs;
 #[test]
 fn test_cli_to_shape_integration() -> Result<()> {
 	// -- Setup & Fixtures
-	let tmp_dir = std::env::temp_dir().join("sfusion_cli_integration_test");
-	fs::create_dir_all(&tmp_dir)?;
+	let tmp_dir = std::path::Path::new("tests/data/.tmp/test_cli_to_shape_integration");
+	fs::create_dir_all(tmp_dir)?;
 
 	let svg_file = tmp_dir.join("test_polygon.svg");
-	let svg_content = r#"<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,5 90,90 10,90"/></svg>"#;
+	let svg_content =
+		r#"<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,5 90,90 10,90"/></svg>"#;
 	fs::write(&svg_file, svg_content)?;
 
 	// -- Exec
