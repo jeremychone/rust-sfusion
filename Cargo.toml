@@ -1,17 +1,15 @@
-[package]
-name = "sfusion"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "3"
+members = ["crates/*"]
 
-[lib]
-doctest = false
-
-[lints.rust]
+[workspace.lints.rust]
 unsafe_code = "forbid"
 # unused = { level = "allow", priority = -1 } # For exploratory dev.
 
-[dependencies]
+[workspace.dependencies]
 # -- Content Formats
 quick-xml = "0.37"
+# -- CLI
+clap = { version = "4", features = ["derive"] }
 # -- Others
 derive_more = { version = "2", features = ["from", "display"] }

@@ -1,0 +1,17 @@
+[package]
+name = "sfusion"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+doctest = false
+
+[lints.rust]
+unsafe_code = "forbid"
+# unused = { level = "allow", priority = -1 } # For exploratory dev.
+
+[dependencies]
+# -- Content Formats
+quick-xml = { workspace = true }
+# -- Others
+derive_more = { workspace = true }
