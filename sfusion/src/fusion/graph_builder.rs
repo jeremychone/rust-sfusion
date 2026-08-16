@@ -31,7 +31,7 @@ pub fn build_fusion_doc(svg_doc: &SvgDoc) -> Result<FusionDoc> {
 	let mut top_output_names = Vec::new();
 
 	for element in &svg_doc.elements {
-		if let Some(out_name) = builder.process_element(element, &view_box, Transform2D::identity())? {
+		if let Some(out_name) = builder.process_element(element, &view_box, Transform2D::identity(), None)? {
 			top_output_names.push(out_name);
 		}
 	}
@@ -82,10 +82,11 @@ impl GraphBuilder {
 		element: &SvgElement,
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
+		parent_stroke_width: Option<f64>,
 	) -> Result<Option<String>> {
 		match element {
-			SvgElement::Group(group) => self.process_group(group, view_box, parent_tf),
-			_ => self.process_shape(element, view_box, parent_tf),
+			SvgElement::Group(group) => self.process_group(group, view_box, parent_tf, parent_stroke_width),
+			_ => self.process_shape(element, view_box, parent_tf, parent_stroke_width),
 		}
 	}
 
@@ -94,6 +95,7 @@ impl GraphBuilder {
 		element: &SvgElement,
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
+		parent_stroke_width: Option<f64>,
 	) -> Result<Option<String>> {
 		let elem_tf = get_element_transform(element).unwrap_or_default();
 		let total_tf = parent_tf.multiply(&elem_tf);
@@ -110,6 +112,11 @@ impl GraphBuilder {
 		}
 
 		let explicit_id = get_element_id(element);
+		let elem_stroke_width = get_element_stroke_width(element).or(parent_stroke_width);
+		let border_width = elem_stroke_width.map(|sw| {
+			let denom = if view_box.width == 0.0 { 1.0 } else { view_box.width };
+			sw / denom
+		});
 		let mut last_name = None;
 
 		for poly in polylines {
@@ -120,6 +127,7 @@ impl GraphBuilder {
 				name: name.clone(),
 				mask_width: 320.0,
 				mask_height: 240.0,
+				border_width,
 				points: poly.points,
 				closed: poly.closed,
 				view_info: pos,
@@ -137,14 +145,16 @@ impl GraphBuilder {
 		group: &SvgGroup,
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
+		parent_stroke_width: Option<f64>,
 	) -> Result<Option<String>> {
 		let group_tf = group.transform.unwrap_or_default();
 		let total_tf = parent_tf.multiply(&group_tf);
+		let effective_stroke_width = group.stroke_width.or(parent_stroke_width);
 
 		let mut child_names = Vec::new();
 
 		for child in &group.children {
-			if let Some(name) = self.process_element(child, view_box, total_tf)? {
+			if let Some(name) = self.process_element(child, view_box, total_tf, effective_stroke_width)? {
 				child_names.push(name);
 			}
 		}
@@ -244,6 +254,19 @@ fn get_element_id(element: &SvgElement) -> Option<&str> {
 		SvgElement::Polyline(pl) => pl.id.as_deref(),
 		SvgElement::Polygon(pg) => pg.id.as_deref(),
 		SvgElement::Group(g) => g.id.as_deref(),
+	}
+}
+
+fn get_element_stroke_width(element: &SvgElement) -> Option<f64> {
+	match element {
+		SvgElement::Path(p) => p.stroke_width,
+		SvgElement::Rect(r) => r.stroke_width,
+		SvgElement::Circle(c) => c.stroke_width,
+		SvgElement::Ellipse(e) => e.stroke_width,
+		SvgElement::Line(l) => l.stroke_width,
+		SvgElement::Polyline(pl) => pl.stroke_width,
+		SvgElement::Polygon(pg) => pg.stroke_width,
+		SvgElement::Group(g) => g.stroke_width,
 	}
 }
 
@@ -348,8 +371,59 @@ mod tests {
 		assert_eq!(fusion_doc.tools.len(), 1);
 		if let FusionTool::SPolygon(p) = &fusion_doc.tools[0] {
 			assert_eq!(p.name, "grabber");
+			assert_eq!(p.border_width, None);
 		} else {
 			return Err("Expected SPolygon grabber".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_stroke_width_inheritance() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 200.0, 100.0)),
+			width: Some(200.0),
+			height: Some(100.0),
+			elements: vec![SvgElement::Group(SvgGroup {
+				id: Some("styled_group".to_string()),
+				transform: None,
+				stroke_width: Some(4.0),
+				children: vec![
+					SvgElement::Path(SvgPath {
+						id: Some("inherited_path".to_string()),
+						transform: None,
+						stroke_width: None,
+						d: "M 0 0 L 10 10".to_string(),
+					}),
+					SvgElement::Path(SvgPath {
+						id: Some("override_path".to_string()),
+						transform: None,
+						stroke_width: Some(10.0),
+						d: "M 10 10 L 20 20".to_string(),
+					}),
+				],
+			})],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 3);
+		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
+			assert_eq!(p1.name, "inherited_path");
+			assert_eq!(p1.border_width, Some(4.0 / 200.0));
+		} else {
+			return Err("Expected inherited_path SPolygon".into());
+		}
+
+		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
+			assert_eq!(p2.name, "override_path");
+			assert_eq!(p2.border_width, Some(10.0 / 200.0));
+		} else {
+			return Err("Expected override_path SPolygon".into());
 		}
 
 		Ok(())

@@ -70,3 +70,27 @@ fn test_sfusion_svg_to_sfusion_polyline_and_polygon() -> Result<()> {
 
 	Ok(())
 }
+
+#[test]
+fn test_sfusion_svg_to_sfusion_stroke_width() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r#"
+		<svg viewBox="0 0 100 100">
+			<g stroke-width="2">
+				<path id="path_inherited" d="M 0 0 L 10 10"/>
+				<path id="path_styled" d="M 10 10 L 20 20" style="stroke-width: 5px"/>
+			</g>
+		</svg>
+	"#;
+
+	// -- Exec
+	let fusion_script = sfusion::svg_to_sfusion(svg_content)?;
+
+	// -- Check
+	assert!(fusion_script.contains("path_inherited = sPolygon {"));
+	assert!(fusion_script.contains("path_styled = sPolygon {"));
+	assert!(fusion_script.contains("BorderWidth = Input { Value = 0.02, },"));
+	assert!(fusion_script.contains("BorderWidth = Input { Value = 0.05, },"));
+
+	Ok(())
+}

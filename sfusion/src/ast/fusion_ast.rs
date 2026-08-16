@@ -16,6 +16,7 @@ pub struct SPolygon {
 	pub name: String,
 	pub mask_width: f64,
 	pub mask_height: f64,
+	pub border_width: Option<f64>,
 	pub points: Vec<PolylinePoint>,
 	pub closed: bool,
 	pub view_info: ViewInfo,

@@ -45,6 +45,13 @@ fn serialize_spolygon(out: &mut String, poly: &SPolygon, is_last: bool) {
 		"\t\t\t\tMaskHeight = Input {{\n\t\t\t\t\tValue = Number {{\n\t\t\t\t\t\tValue = {mask_height}\n\t\t\t\t\t}},\n\t\t\t\t}},"
 	);
 	out.push_str("\t\t\t\tPolyline2 = Input {\n\t\t\t\t\tValue = Polyline {\n\t\t\t\t\t},\n\t\t\t\t},\n");
+	if let Some(border_width) = poly.border_width {
+		let bw_str = format_f64(border_width);
+		let _ = writeln!(
+			out,
+			"\t\t\t\tBorderWidth = Input {{ Value = {bw_str}, }},"
+		);
+	}
 	out.push_str("\t\t\t\tJoinStyle = Input { Value = 2, },\n");
 	out.push_str("\t\t\t\tMiterLimit = Input { Value = 4, },\n");
 	out.push_str("\t\t\t\tCapStyle = Input { Value = 0, },\n");
@@ -147,6 +154,7 @@ mod tests {
 					name: "poly_1".to_string(),
 					mask_width: 320.0,
 					mask_height: 240.0,
+					border_width: Some(0.022),
 					points: vec![
 						PolylinePoint {
 							x: 0.1,
@@ -186,6 +194,7 @@ mod tests {
 		assert!(output.contains("poly_1 = sPolygon {"));
 		assert!(output.contains("Value = 320"));
 		assert!(output.contains("Value = 240"));
+		assert!(output.contains("BorderWidth = Input { Value = 0.022, },"));
 		assert!(output.contains("Closed = true,"));
 		assert!(output.contains("{ X = 0.1, Y = 0.2, LX = -0.01, LY = 0.02, RX = 0.01, RY = -0.02 },"));
 		assert!(output.contains("{ Linear = true, X = 0.3, Y = 0.4, LX = 0, LY = 0, RX = 0, RY = 0 }"));
