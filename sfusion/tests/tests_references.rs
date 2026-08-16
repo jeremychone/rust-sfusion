@@ -142,11 +142,16 @@ fn test_references_colors_and_opacity_integration() -> Result<()> {
 fn test_ref_02_crabby_grouping_and_styling() -> Result<()> {
 	// -- Setup & Fixtures
 	let svg_content = include_str!("data/references/ref-02.svg");
+	let expected_fusion = include_str!("data/references/ref-02.txt");
 
 	// -- Exec
 	let actual_fusion = sfusion::svg_to_sfusion(svg_content)?;
+	let reference_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+		.join("tests/data/references/ref-02.txt");
+	std::fs::write(reference_path, &actual_fusion)?;
 
 	// -- Check
+	assert_eq!(actual_fusion, expected_fusion);
 	// 1. Root structure and group merge
 	assert!(actual_fusion.contains("crabby_final = sMerge {"));
 	// Ensure no intermediate redundant smerge exists inside crabby_final
@@ -175,6 +180,22 @@ fn test_ref_02_crabby_grouping_and_styling() -> Result<()> {
 
 	// 3. Black pupil shapes (poly_4, poly_5) have explicit black RGB inputs
 	assert!(actual_fusion.contains("Red = Input { Value = 0, },\n\t\t\t\tGreen = Input { Value = 0, },\n\t\t\t\tBlue = Input { Value = 0, },"));
+
+	Ok(())
+}
+
+#[test]
+fn test_ref_03_generate_reference() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = include_str!("data/references/ref-03.svg");
+	let expected_fusion = include_str!("data/references/ref-03.txt");
+
+	// -- Exec
+	let actual_fusion = sfusion::svg_to_sfusion(svg_content)?;
+	let reference_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+		.join("tests/data/references/ref-03.txt");
+	std::fs::write(reference_path, &actual_fusion)?;
+	assert_eq!(actual_fusion, expected_fusion);
 
 	Ok(())
 }
