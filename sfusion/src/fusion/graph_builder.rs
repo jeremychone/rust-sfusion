@@ -117,6 +117,7 @@ impl GraphBuilder {
 			let denom = if view_box.width == 0.0 { 1.0 } else { view_box.width };
 			sw / denom
 		});
+		let (red, green, blue, opacity) = resolve_color_and_opacity(&effective_style);
 		let mut last_name = None;
 
 		for poly in polylines {
@@ -128,6 +129,10 @@ impl GraphBuilder {
 				mask_width: 320.0,
 				mask_height: 240.0,
 				border_width,
+				red,
+				green,
+				blue,
+				opacity,
 				points: poly.points,
 				closed: poly.closed,
 				view_info: pos,
@@ -255,6 +260,45 @@ fn get_element_id(element: &SvgElement) -> Option<&str> {
 		SvgElement::Polygon(pg) => pg.id.as_deref(),
 		SvgElement::Group(g) => g.id.as_deref(),
 	}
+}
+
+fn resolve_color_and_opacity(
+	style: &SvgStyle,
+) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
+	let (paint, is_stroke) = match (&style.fill, &style.stroke) {
+		(Some(SvgPaint::Color(c)), _) => (Some(c), false),
+		(Some(SvgPaint::None), Some(SvgPaint::Color(c))) => (Some(c), true),
+		(None, Some(SvgPaint::Color(c))) => (Some(c), true),
+		_ => (None, false),
+	};
+
+	let (red, green, blue, color_alpha) = if let Some(c) = paint {
+		(
+			Some(c.r as f64 / 255.0),
+			Some(c.g as f64 / 255.0),
+			Some(c.b as f64 / 255.0),
+			if (c.a - 1.0).abs() > 1e-6 { Some(c.a) } else { None },
+		)
+	} else {
+		(None, None, None, None)
+	};
+
+	let mut effective_op = style.opacity;
+	let specific_op = if is_stroke {
+		style.stroke_opacity
+	} else {
+		style.fill_opacity
+	};
+
+	if let Some(spec_op) = specific_op {
+		effective_op = Some(effective_op.unwrap_or(1.0) * spec_op);
+	}
+
+	if let Some(alpha) = color_alpha {
+		effective_op = Some(effective_op.unwrap_or(1.0) * alpha);
+	}
+
+	(red, green, blue, effective_op)
 }
 // endregion: --- Support
 
@@ -491,6 +535,75 @@ mod tests {
 			assert_eq!(p2.border_width, Some(2.0 / 400.0));
 		} else {
 			return Err("Expected rect2 SPolygon".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_color_and_opacity_mapping() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 100.0, 100.0)),
+			width: Some(100.0),
+			height: Some(100.0),
+			defs: SvgDefs::default(),
+			elements: vec![
+				SvgElement::Rect(SvgRect {
+					id: Some("filled_rect".to_string()),
+					transform: None,
+					style: SvgStyle {
+						fill: Some(SvgPaint::Color(SvgColor::new_rgba(255, 128, 0, 0.5))),
+						opacity: Some(0.8),
+						..Default::default()
+					},
+					x: 0.0,
+					y: 0.0,
+					width: 10.0,
+					height: 10.0,
+					rx: None,
+					ry: None,
+				}),
+				SvgElement::Path(SvgPath {
+					id: Some("stroked_path".to_string()),
+					transform: None,
+					style: SvgStyle {
+						fill: Some(SvgPaint::None),
+						stroke: Some(SvgPaint::Color(SvgColor::new_rgb(0, 0, 255))),
+						stroke_width: Some(2.0),
+						stroke_opacity: Some(0.75),
+						..Default::default()
+					},
+					d: "M 0 0 L 10 10".to_string(),
+				}),
+			],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 3);
+		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
+			assert_eq!(p1.name, "filled_rect");
+			assert_eq!(p1.red, Some(1.0));
+			assert!((p1.green.ok_or("missing green")? - 128.0 / 255.0).abs() < 1e-6);
+			assert_eq!(p1.blue, Some(0.0));
+			// opacity = 0.8 * 0.5 = 0.4
+			assert!((p1.opacity.ok_or("missing opacity")? - 0.4).abs() < 1e-6);
+		} else {
+			return Err("Expected filled_rect SPolygon".into());
+		}
+
+		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
+			assert_eq!(p2.name, "stroked_path");
+			assert_eq!(p2.red, Some(0.0));
+			assert_eq!(p2.green, Some(0.0));
+			assert_eq!(p2.blue, Some(1.0));
+			assert_eq!(p2.opacity, Some(0.75));
+			assert_eq!(p2.border_width, Some(0.02));
+		} else {
+			return Err("Expected stroked_path SPolygon".into());
 		}
 
 		Ok(())

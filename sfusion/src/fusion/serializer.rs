@@ -44,6 +44,22 @@ fn serialize_spolygon(out: &mut String, poly: &SPolygon, is_last: bool) {
 		out,
 		"\t\t\t\tMaskHeight = Input {{\n\t\t\t\t\tValue = Number {{\n\t\t\t\t\t\tValue = {mask_height}\n\t\t\t\t\t}},\n\t\t\t\t}},"
 	);
+	if let Some(red) = poly.red {
+		let val = format_f64(red);
+		let _ = writeln!(out, "\t\t\t\tRed = Input {{ Value = {val}, }},");
+	}
+	if let Some(green) = poly.green {
+		let val = format_f64(green);
+		let _ = writeln!(out, "\t\t\t\tGreen = Input {{ Value = {val}, }},");
+	}
+	if let Some(blue) = poly.blue {
+		let val = format_f64(blue);
+		let _ = writeln!(out, "\t\t\t\tBlue = Input {{ Value = {val}, }},");
+	}
+	if let Some(opacity) = poly.opacity {
+		let val = format_f64(opacity);
+		let _ = writeln!(out, "\t\t\t\tOpacity = Input {{ Value = {val}, }},");
+	}
 	out.push_str("\t\t\t\tPolyline2 = Input {\n\t\t\t\t\tValue = Polyline {\n\t\t\t\t\t},\n\t\t\t\t},\n");
 	if let Some(border_width) = poly.border_width {
 		let bw_str = format_f64(border_width);
@@ -155,6 +171,10 @@ mod tests {
 					mask_width: 320.0,
 					mask_height: 240.0,
 					border_width: Some(0.022),
+					red: Some(0.12),
+					green: Some(0.34),
+					blue: Some(0.56),
+					opacity: Some(0.78),
 					points: vec![
 						PolylinePoint {
 							x: 0.1,
@@ -194,6 +214,10 @@ mod tests {
 		assert!(output.contains("poly_1 = sPolygon {"));
 		assert!(output.contains("Value = 320"));
 		assert!(output.contains("Value = 240"));
+		assert!(output.contains("Red = Input { Value = 0.12, },"));
+		assert!(output.contains("Green = Input { Value = 0.34, },"));
+		assert!(output.contains("Blue = Input { Value = 0.56, },"));
+		assert!(output.contains("Opacity = Input { Value = 0.78, },"));
 		assert!(output.contains("BorderWidth = Input { Value = 0.022, },"));
 		assert!(output.contains("Closed = true,"));
 		assert!(output.contains("{ X = 0.1, Y = 0.2, LX = -0.01, LY = 0.02, RX = 0.01, RY = -0.02 },"));

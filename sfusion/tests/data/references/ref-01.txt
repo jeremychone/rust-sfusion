@@ -20,6 +20,9 @@
 						Value = 240
 					},
 				},
+				Red = Input { Value = 0.2980392156862745, },
+				Green = Input { Value = 0.7176470588235294, },
+				Blue = Input { Value = 0.8941176470588236, },
 				Polyline2 = Input {
 					Value = Polyline {
 					},
@@ -61,6 +64,9 @@
 						Value = 240
 					},
 				},
+				Red = Input { Value = 1, },
+				Green = Input { Value = 1, },
+				Blue = Input { Value = 1, },
 				Polyline2 = Input {
 					Value = Polyline {
 					},
