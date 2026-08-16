@@ -9,7 +9,7 @@ pub fn compute_output_path(input_path: &Path) -> Result<PathBuf> {
 		.and_then(|s| s.to_str())
 		.ok_or_else(|| Error::custom(format!("Invalid file path: {}", input_path.display())))?;
 
-	let out_file_name = format!("{file_name}.fusion-path.txt");
+	let out_file_name = format!("{file_name}.fusion-shape.txt");
 	let output_path = match input_path.parent() {
 		Some(parent) if !parent.as_os_str().is_empty() => parent.join(out_file_name),
 		_ => PathBuf::from(out_file_name),
@@ -53,8 +53,8 @@ mod tests {
 		let out2 = compute_output_path(p2)?;
 
 		// -- Check
-		assert_eq!(out1, PathBuf::from("drawing.svg.fusion-path.txt"));
-		assert_eq!(out2, PathBuf::from("assets/sub/icon.svg.fusion-path.txt"));
+		assert_eq!(out1, PathBuf::from("drawing.svg.fusion-shape.txt"));
+		assert_eq!(out2, PathBuf::from("assets/sub/icon.svg.fusion-shape.txt"));
 
 		Ok(())
 	}
@@ -77,7 +77,7 @@ mod tests {
 		exec_to_shape(args)?;
 
 		// -- Check
-		let expected_output_path = tmp_dir.join("sample_icon.svg.fusion-path.txt");
+		let expected_output_path = tmp_dir.join("sample_icon.svg.fusion-shape.txt");
 		assert!(expected_output_path.exists());
 
 		let content = fs::read_to_string(&expected_output_path)?;

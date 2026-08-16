@@ -16,7 +16,7 @@ fn test_cli_to_shape_integration() -> Result<()> {
 
 	// -- Exec
 	let fusion_content = sfusion::svg_to_sfusion(svg_content)?;
-	let output_file = tmp_dir.join("test_polygon.svg.fusion-path.txt");
+	let output_file = tmp_dir.join("test_polygon.svg.fusion-shape.txt");
 	fs::write(&output_file, &fusion_content)?;
 
 	// -- Check

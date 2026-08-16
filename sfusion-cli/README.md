@@ -14,7 +14,7 @@ cargo install --path sfusion-cli
 
 ```sh
 # Convert File to Shape Output
-sfusion to-shape pat/to/icon.svg
+sfusion to-shape path/to/icon.svg
 # Generate `path/to/icon.svg.fusion-shape.txt` alongside the source file:
 
 # Convert Clipboard Content

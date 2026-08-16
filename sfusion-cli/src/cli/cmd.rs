@@ -13,7 +13,7 @@ pub struct CliCmd {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum CliSubCmd {
-	/// Convert an SVG file into DaVinci Resolve Fusion shape format (<stem>_fusion-shape.txt)
+	/// Convert an SVG file into DaVinci Resolve Fusion shape format (<file>.fusion-shape.txt)
 	ToShape(ToShapeArgs),
 
 	/// Inspect system clipboard, convert SVG to DaVinci Resolve Fusion format, and write back to clipboard
