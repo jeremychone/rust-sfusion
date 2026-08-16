@@ -22,10 +22,22 @@ pub struct CliCmd {
 	pub file: Option<String>,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum CliSubCmd {
+	/// Convert an SVG file into DaVinci Resolve Fusion shape format (<stem>_fusion-shape.txt)
+	ToShape(ToShapeArgs),
+
+	/// Inspect system clipboard, convert SVG to DaVinci Resolve Fusion format, and write back to clipboard
+	ClipSwap,
+
 	/// Convert an SVG file or stdin to DaVinci Resolve Fusion format
 	Convert(ConvertArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ToShapeArgs {
+	/// Input SVG file path
+	pub file: String,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -61,6 +73,38 @@ mod tests {
 		// -- Check
 		assert_eq!(cmd.file.as_deref(), Some("input.svg"));
 		assert!(cmd.command.is_none());
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_cli_cmd_parse_to_shape() -> Result<()> {
+		// -- Setup & Fixtures
+		let args = ["sfusion", "to-shape", "icons/star.svg"];
+
+		// -- Exec
+		let cmd = CliCmd::try_parse_from(args)?;
+
+		// -- Check
+		if let Some(CliSubCmd::ToShape(to_shape_args)) = cmd.command {
+			assert_eq!(to_shape_args.file, "icons/star.svg");
+		} else {
+			return Err("Expected CliSubCmd::ToShape".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_cli_cmd_parse_clip_swap() -> Result<()> {
+		// -- Setup & Fixtures
+		let args = ["sfusion", "clip-swap"];
+
+		// -- Exec
+		let cmd = CliCmd::try_parse_from(args)?;
+
+		// -- Check
+		assert!(matches!(cmd.command, Some(CliSubCmd::ClipSwap)));
 
 		Ok(())
 	}
