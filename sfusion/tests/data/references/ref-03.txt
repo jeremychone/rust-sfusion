@@ -1,6 +1,6 @@
 {
 	Tools = ordered() {
-		body = sPolygon {
+		body_1 = sPolygon {
 			DrawMode = "ModifyOnly",
 			NameSet = true,
 			Inputs = {
@@ -109,7 +109,7 @@
 			},
 			ViewInfo = OperatorInfo { Pos = { 1980, -247.5 } },
 		},
-		body_1 = sPolygon {
+		body_2 = sPolygon {
 			DrawMode = "ModifyOnly",
 			NameSet = true,
 			Inputs = {
@@ -153,7 +153,7 @@
 			},
 			ViewInfo = OperatorInfo { Pos = { 2090, -247.5 } },
 		},
-		body_2 = sPolygon {
+		body_3 = sPolygon {
 			DrawMode = "ModifyOnly",
 			NameSet = true,
 			Inputs = {
@@ -457,6 +457,24 @@
 			},
 			ViewInfo = OperatorInfo { Pos = { 2640, -247.5 } },
 		},
+		body = sMerge {
+			NameSet = true,
+			Inputs = {
+				Input1 = Input {
+					SourceOp = "body_1",
+					Source = "Output",
+				},
+				Input2 = Input {
+					SourceOp = "body_2",
+					Source = "Output",
+				},
+				Input3 = Input {
+					SourceOp = "body_3",
+					Source = "Output",
+				}
+			},
+			ViewInfo = OperatorInfo { Pos = { 2200, -181.5 } },
+		},
 		crabby_final = sMerge {
 			NameSet = true,
 			Inputs = {
@@ -465,26 +483,18 @@
 					Source = "Output",
 				},
 				Input2 = Input {
-					SourceOp = "body_1",
-					Source = "Output",
-				},
-				Input3 = Input {
-					SourceOp = "body_2",
-					Source = "Output",
-				},
-				Input4 = Input {
 					SourceOp = "eye_2",
 					Source = "Output",
 				},
-				Input5 = Input {
+				Input3 = Input {
 					SourceOp = "eye_1",
 					Source = "Output",
 				},
-				Input6 = Input {
+				Input4 = Input {
 					SourceOp = "feet_2",
 					Source = "Output",
 				},
-				Input7 = Input {
+				Input5 = Input {
 					SourceOp = "feet_1",
 					Source = "Output",
 				}

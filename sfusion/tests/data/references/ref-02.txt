@@ -1,6 +1,6 @@
 {
 	Tools = ordered() {
-		poly_1 = sPolygon {
+		poly = sPolygon {
 			DrawMode = "ModifyOnly",
 			NameSet = true,
 			Inputs = {
@@ -109,7 +109,7 @@
 			},
 			ViewInfo = OperatorInfo { Pos = { 1980, -247.5 } },
 		},
-		poly_2 = sPolygon {
+		poly_1 = sPolygon {
 			DrawMode = "ModifyOnly",
 			NameSet = true,
 			Inputs = {
@@ -153,7 +153,7 @@
 			},
 			ViewInfo = OperatorInfo { Pos = { 2090, -247.5 } },
 		},
-		poly_3 = sPolygon {
+		poly_2 = sPolygon {
 			DrawMode = "ModifyOnly",
 			NameSet = true,
 			Inputs = {
@@ -461,43 +461,53 @@
 			NameSet = true,
 			Inputs = {
 				Input1 = Input {
-					SourceOp = "poly_1",
+					SourceOp = "smerge",
 					Source = "Output",
 				},
 				Input2 = Input {
-					SourceOp = "poly_2",
-					Source = "Output",
-				},
-				Input3 = Input {
-					SourceOp = "poly_3",
-					Source = "Output",
-				},
-				Input4 = Input {
 					SourceOp = "poly_4",
 					Source = "Output",
 				},
-				Input5 = Input {
+				Input3 = Input {
 					SourceOp = "poly_5",
 					Source = "Output",
 				},
-				Input6 = Input {
+				Input4 = Input {
 					SourceOp = "poly_6",
 					Source = "Output",
 				},
-				Input7 = Input {
+				Input5 = Input {
 					SourceOp = "poly_7",
 					Source = "Output",
 				},
-				Input8 = Input {
+				Input6 = Input {
 					SourceOp = "poly_8",
 					Source = "Output",
 				},
-				Input9 = Input {
+				Input7 = Input {
 					SourceOp = "poly_9",
 					Source = "Output",
 				}
 			},
 			ViewInfo = OperatorInfo { Pos = { 2860, -181.5 } },
+		},
+		smerge = sMerge {
+			NameSet = true,
+			Inputs = {
+				Input1 = Input {
+					SourceOp = "poly",
+					Source = "Output",
+				},
+				Input2 = Input {
+					SourceOp = "poly_1",
+					Source = "Output",
+				},
+				Input3 = Input {
+					SourceOp = "poly_2",
+					Source = "Output",
+				}
+			},
+			ViewInfo = OperatorInfo { Pos = { 2200, -181.5 } },
 		}
 	}
 }

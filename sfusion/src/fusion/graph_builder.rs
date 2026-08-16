@@ -126,31 +126,67 @@ impl GraphBuilder {
 		};
 		let (red, green, blue, opacity) = resolve_color_and_opacity(element.style(), &effective_style);
 		let (mask_width, mask_height) = view_box.scaled_1080p_dimensions();
-		let mut shape_tool_names = Vec::new();
+		if polylines.len() > 1 {
+			let merge_name = self.name_tracker.generate_unique_name(explicit_id.or(Some("smerge")));
+			let mut child_names = Vec::with_capacity(polylines.len());
 
-		for poly in polylines {
-			let name = self.name_tracker.generate_unique_name(explicit_id);
-			let pos = self.next_leaf_pos();
+			for poly in polylines {
+				let poly_name = self.name_tracker.generate_unique_name(explicit_id.or(Some("poly")));
+				let pos = self.next_leaf_pos();
 
-			let spolygon = SPolygon {
-				name: name.clone(),
-				mask_width,
-				mask_height,
-				border_width,
-				red,
-				green,
-				blue,
-				opacity,
-				points: poly.points,
-				closed: poly.closed,
-				view_info: pos,
+				let spolygon = SPolygon {
+					name: poly_name.clone(),
+					mask_width,
+					mask_height,
+					border_width,
+					red,
+					green,
+					blue,
+					opacity,
+					points: poly.points,
+					closed: poly.closed,
+					view_info: pos,
+				};
+
+				self.tools.push(FusionTool::SPolygon(spolygon));
+				child_names.push(poly_name);
+			}
+
+			let merge_pos = self.next_merge_pos();
+			let s_merge = SMerge {
+				name: merge_name.clone(),
+				inputs: child_names,
+				view_info: merge_pos,
 			};
+			self.tools.push(FusionTool::SMerge(s_merge));
 
-			self.tools.push(FusionTool::SPolygon(spolygon));
-			shape_tool_names.push(name);
+			Ok(vec![merge_name])
+		} else {
+			let mut shape_tool_names = Vec::new();
+			for poly in polylines {
+				let name = self.name_tracker.generate_unique_name(explicit_id);
+				let pos = self.next_leaf_pos();
+
+				let spolygon = SPolygon {
+					name: name.clone(),
+					mask_width,
+					mask_height,
+					border_width,
+					red,
+					green,
+					blue,
+					opacity,
+					points: poly.points,
+					closed: poly.closed,
+					view_info: pos,
+				};
+
+				self.tools.push(FusionTool::SPolygon(spolygon));
+				shape_tool_names.push(name);
+			}
+
+			Ok(shape_tool_names)
 		}
-
-		Ok(shape_tool_names)
 	}
 
 	fn process_group(
@@ -806,14 +842,14 @@ mod tests {
 			.ok_or("Expected SMerge tool for multi-subpath shape")?;
 
 		assert_eq!(merge_tool.inputs.len(), 2);
-		assert_eq!(merge_tool.inputs[0], "multi_path");
-		assert_eq!(merge_tool.inputs[1], "multi_path_1");
+		assert_eq!(merge_tool.inputs[0], "multi_path_1");
+		assert_eq!(merge_tool.inputs[1], "multi_path_2");
 
 		Ok(())
 	}
 
 	#[test]
-	fn test_fusion_graph_builder_multi_polyline_inside_group_flattens() -> Result<()> {
+	fn test_fusion_graph_builder_multi_polyline_inside_group_preserves_smerge() -> Result<()> {
 		// -- Setup & Fixtures
 		let svg_doc = SvgDoc {
 			view_box: Some(SvgViewBox::new(0.0, 0.0, 100.0, 100.0)),
@@ -847,8 +883,8 @@ mod tests {
 		let fusion_doc = build_fusion_doc(&svg_doc)?;
 
 		// -- Check
-		// Tools: body, body_1, eye (3 polygons) + crabby_group (1 merge). Total: 4 tools
-		assert_eq!(fusion_doc.tools.len(), 4);
+		// Tools: body_1, body_2, eye (3 polygons) + body (sMerge), crabby_group (sMerge). Total: 5 tools
+		assert_eq!(fusion_doc.tools.len(), 5);
 		let merge_tools: Vec<&SMerge> = fusion_doc
 			.tools
 			.iter()
@@ -858,9 +894,11 @@ mod tests {
 			})
 			.collect();
 
-		assert_eq!(merge_tools.len(), 1);
-		assert_eq!(merge_tools[0].name, "crabby_group");
-		assert_eq!(merge_tools[0].inputs, vec!["body", "body_1", "eye"]);
+		assert_eq!(merge_tools.len(), 2);
+		let body_merge = merge_tools.iter().find(|m| m.name == "body").ok_or("missing body merge")?;
+		let group_merge = merge_tools.iter().find(|m| m.name == "crabby_group").ok_or("missing group merge")?;
+		assert_eq!(body_merge.inputs, vec!["body_1", "body_2"]);
+		assert_eq!(group_merge.inputs, vec!["body", "eye"]);
 
 		Ok(())
 	}

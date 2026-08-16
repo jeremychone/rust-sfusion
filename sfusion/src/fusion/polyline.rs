@@ -346,6 +346,32 @@ mod tests {
 
 		Ok(())
 	}
+
+	#[test]
+	fn test_fusion_polyline_multi_subpath_extraction() -> Result<()> {
+		// -- Setup & Fixtures
+		let vb = SvgViewBox::new(0.0, 0.0, 100.0, 100.0);
+		let segments = vec![
+			NormalizedSegment::MoveTo(Point::new(10.0, 10.0)),
+			NormalizedSegment::LineTo(Point::new(20.0, 10.0)),
+			NormalizedSegment::Close,
+			NormalizedSegment::MoveTo(Point::new(30.0, 30.0)),
+			NormalizedSegment::LineTo(Point::new(40.0, 30.0)),
+			NormalizedSegment::Close,
+		];
+
+		// -- Exec
+		let polylines = segments_to_polylines(&segments, &vb);
+
+		// -- Check
+		assert_eq!(polylines.len(), 2);
+		assert!(polylines[0].closed);
+		assert_eq!(polylines[0].points.len(), 2);
+		assert!(polylines[1].closed);
+		assert_eq!(polylines[1].points.len(), 2);
+
+		Ok(())
+	}
 }
 
 // endregion: --- Tests
