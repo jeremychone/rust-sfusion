@@ -124,6 +124,45 @@ impl Transform2D {
 		}
 	}
 
+	pub fn translate(tx: f64, ty: f64) -> Self {
+		Self {
+			a: 1.0,
+			b: 0.0,
+			c: 0.0,
+			d: 1.0,
+			e: tx,
+			f: ty,
+		}
+	}
+
+	pub fn scale(sx: f64, sy: f64) -> Self {
+		Self {
+			a: sx,
+			b: 0.0,
+			c: 0.0,
+			d: sy,
+			e: 0.0,
+			f: 0.0,
+		}
+	}
+
+	pub fn rotate_rad(rad: f64) -> Self {
+		let cos = rad.cos();
+		let sin = rad.sin();
+		Self {
+			a: cos,
+			b: sin,
+			c: -sin,
+			d: cos,
+			e: 0.0,
+			f: 0.0,
+		}
+	}
+
+	pub fn rotate_deg(deg: f64) -> Self {
+		Self::rotate_rad(deg.to_radians())
+	}
+
 	pub fn multiply(&self, other: &Transform2D) -> Transform2D {
 		Transform2D {
 			a: self.a * other.a + self.c * other.b,

@@ -114,7 +114,7 @@ impl GraphBuilder {
 		let explicit_id = get_element_id(element);
 		let effective_style = element.style().inherit_from(parent_style);
 		let border_width = effective_style.stroke_width.map(|sw| {
-			let denom = if view_box.width == 0.0 { 1.0 } else { view_box.width };
+			let denom = if view_box.height == 0.0 { 1.0 } else { view_box.height };
 			sw / denom
 		});
 		let (red, green, blue, opacity) = resolve_color_and_opacity(&effective_style);
@@ -453,14 +453,14 @@ mod tests {
 		assert_eq!(fusion_doc.tools.len(), 3);
 		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
 			assert_eq!(p1.name, "inherited_path");
-			assert_eq!(p1.border_width, Some(4.0 / 200.0));
+			assert_eq!(p1.border_width, Some(4.0 / 100.0));
 		} else {
 			return Err("Expected inherited_path SPolygon".into());
 		}
 
 		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
 			assert_eq!(p2.name, "override_path");
-			assert_eq!(p2.border_width, Some(10.0 / 200.0));
+			assert_eq!(p2.border_width, Some(10.0 / 100.0));
 		} else {
 			return Err("Expected override_path SPolygon".into());
 		}
@@ -525,14 +525,14 @@ mod tests {
 		assert_eq!(fusion_doc.tools.len(), 3);
 		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
 			assert_eq!(p1.name, "rect1");
-			assert_eq!(p1.border_width, Some(8.0 / 400.0));
+			assert_eq!(p1.border_width, Some(8.0 / 200.0));
 		} else {
 			return Err("Expected rect1 SPolygon".into());
 		}
 
 		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
 			assert_eq!(p2.name, "rect2");
-			assert_eq!(p2.border_width, Some(2.0 / 400.0));
+			assert_eq!(p2.border_width, Some(2.0 / 200.0));
 		} else {
 			return Err("Expected rect2 SPolygon".into());
 		}
@@ -604,6 +604,66 @@ mod tests {
 			assert_eq!(p2.border_width, Some(0.02));
 		} else {
 			return Err("Expected stroked_path SPolygon".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_hierarchical_transforms() -> Result<()> {
+		// -- Setup & Fixtures
+		// Root view box 200x200, center at (100, 100).
+		// Outer group translates by (+50, +20).
+		// Inner group scales by 2x.
+		// Inner shape is a rect at (10, 10) with width 10, height 10.
+		// Transformed rect in SVG space:
+		// x: 50 + (10 * 2) = 70, y: 20 + (10 * 2) = 40.
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 200.0, 200.0)),
+			width: Some(200.0),
+			height: Some(200.0),
+			defs: SvgDefs::default(),
+			elements: vec![SvgElement::Group(SvgGroup {
+				id: Some("outer_grp".to_string()),
+				transform: Some(Transform2D::translate(50.0, 20.0)),
+				style: SvgStyle::default(),
+				children: vec![SvgElement::Group(SvgGroup {
+					id: Some("inner_grp".to_string()),
+					transform: Some(Transform2D::scale(2.0, 2.0)),
+					style: SvgStyle::default(),
+					children: vec![SvgElement::Rect(SvgRect {
+						id: Some("box".to_string()),
+						transform: None,
+						style: SvgStyle::default(),
+						x: 10.0,
+						y: 10.0,
+						width: 10.0,
+						height: 10.0,
+						rx: None,
+						ry: None,
+					})],
+				})],
+			})],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 1);
+		if let FusionTool::SPolygon(p) = &fusion_doc.tools[0] {
+			assert_eq!(p.name, "outer_grp");
+			// First point should be transformed (70, 40)
+			// Center is (100, 100).
+			// rel_x = 70 - 100 = -30.
+			// rel_y = 40 - 100 = -60.
+			// nx = -30 / 200 = -0.15
+			// ny = -(-60) / 200 = 0.3
+			let p0 = p.points[0];
+			assert!((p0.x - (-0.15)).abs() < 1e-6);
+			assert!((p0.y - 0.3).abs() < 1e-6);
+		} else {
+			return Err("Expected SPolygon box".into());
 		}
 
 		Ok(())

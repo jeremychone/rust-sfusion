@@ -94,3 +94,28 @@ fn test_sfusion_svg_to_sfusion_stroke_width() -> Result<()> {
 
 	Ok(())
 }
+
+#[test]
+fn test_sfusion_svg_to_sfusion_nested_group_transforms() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r#"
+		<svg viewBox="0 0 100 100" width="100" height="100">
+			<g id="grp_1" transform="matrix(1 0 0 1 10 20)">
+				<g id="grp_2" transform="matrix(2 0 0 2 0 0)">
+					<line id="seg" x1="0" y1="0" x2="10" y2="10"/>
+				</g>
+			</g>
+		</svg>
+	"#;
+
+	// -- Exec
+	let fusion_script = sfusion::svg_to_sfusion(svg_content)?;
+
+	// -- Check
+	assert!(fusion_script.contains("grp_1 = sPolygon {"));
+	// Start point: x = 10, y = 20
+	// End point: x = 10 + 20 = 30, y = 20 + 20 = 40
+	assert!(fusion_script.contains("Points = {"));
+
+	Ok(())
+}
