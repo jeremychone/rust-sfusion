@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
@@ -383,6 +384,13 @@ fn parse_element_style(e: &quick_xml::events::BytesStart<'_>) -> Result<SvgStyle
 			b"stroke-dasharray" => pres_style.stroke_dasharray = parse_stroke_dasharray(val_str),
 			b"stroke-dashoffset" => pres_style.stroke_dashoffset = parse_dimension(val_str),
 			b"opacity" => pres_style.opacity = parse_dimension(val_str),
+			b"color" => {
+				pres_style
+					.extra
+					.get_or_insert_with(HashMap::new)
+					.entry("color".to_string())
+					.or_insert_with(|| val_str.to_string());
+			}
 			b"style" => {
 				inline_style = Some(parse_style_str(val_str));
 			}

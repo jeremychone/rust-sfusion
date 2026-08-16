@@ -144,3 +144,26 @@ fn test_sfusion_svg_to_sfusion_sanitized_keys() -> Result<()> {
 
 	Ok(())
 }
+
+#[test]
+fn test_sfusion_svg_to_sfusion_layer_ordering_z_index() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r#"
+		<svg viewBox="0 0 500 500">
+			<rect id="bg_layer" x="0" y="0" width="500" height="500"/>
+			<circle id="mid_layer" cx="250" cy="250" r="100"/>
+			<path id="top_layer" d="M 200 200 L 300 300"/>
+		</svg>
+	"#;
+
+	// -- Exec
+	let fusion_script = sfusion::svg_to_sfusion(svg_content)?;
+
+	// -- Check
+	assert!(fusion_script.contains("loop = sMerge {"));
+	assert!(fusion_script.contains("Input1 = Input {\n\t\t\t\t\tSourceOp = \"bg_layer\","));
+	assert!(fusion_script.contains("Input2 = Input {\n\t\t\t\t\tSourceOp = \"mid_layer\","));
+	assert!(fusion_script.contains("Input3 = Input {\n\t\t\t\t\tSourceOp = \"top_layer\","));
+
+	Ok(())
+}

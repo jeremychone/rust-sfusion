@@ -184,3 +184,34 @@ fn test_style_svg_all_elements_with_styles() -> Result<()> {
 
 	Ok(())
 }
+
+#[test]
+fn test_style_svg_hsl_and_current_color_carryover() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r##"
+		<svg viewBox="0 0 400 400">
+			<g color="rebeccapurple">
+				<rect id="hsl_box" x="10" y="10" width="50" height="50" fill="hsl(120, 100%, 50%)" fill-opacity="0.6"/>
+				<circle id="inherited_cc" cx="100" cy="100" r="30" fill="currentColor"/>
+			</g>
+		</svg>
+	"##;
+
+	// -- Exec
+	let fusion_script = svg_to_sfusion(svg_content)?;
+
+	// -- Check
+	assert!(fusion_script.contains("hsl_box = sPolygon {"));
+	assert!(fusion_script.contains("Red = Input { Value = 0, },"));
+	assert!(fusion_script.contains("Green = Input { Value = 1, },"));
+	assert!(fusion_script.contains("Blue = Input { Value = 0, },"));
+	assert!(fusion_script.contains("Opacity = Input { Value = 0.6, },"));
+
+	// rebeccapurple is #663399 (102, 51, 153) -> (0.4, 0.2, 0.6)
+	assert!(fusion_script.contains("inherited_cc = sPolygon {"));
+	assert!(fusion_script.contains("Red = Input { Value = 0.4, },"));
+	assert!(fusion_script.contains("Green = Input { Value = 0.2, },"));
+	assert!(fusion_script.contains("Blue = Input { Value = 0.6, },"));
+
+	Ok(())
+}

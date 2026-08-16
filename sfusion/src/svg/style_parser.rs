@@ -27,6 +27,10 @@ pub fn parse_color(s: &str) -> Option<SvgColor> {
 		return parse_rgb_fn(s);
 	}
 
+	if s.starts_with("hsl(") || s.starts_with("hsla(") {
+		return parse_hsl_fn(s);
+	}
+
 	None
 }
 
@@ -241,6 +245,85 @@ fn parse_rgb_fn(s: &str) -> Option<SvgColor> {
 	Some(SvgColor::new_rgba(r, g, b, a))
 }
 
+fn parse_hsl_fn(s: &str) -> Option<SvgColor> {
+	let open = s.find('(')?;
+	let close = s.rfind(')')?;
+	if close <= open {
+		return None;
+	}
+
+	let args_str = &s[open + 1..close];
+	let cleaned = args_str.replace('/', ",");
+	let parts: Vec<&str> = cleaned
+		.split([',', ' ', '\t'])
+		.filter(|item| !item.is_empty())
+		.collect();
+
+	if parts.len() < 3 {
+		return None;
+	}
+
+	let h = parse_hue(parts[0])?;
+	let s_val = parse_percentage_or_fraction(parts[1])?;
+	let l_val = parse_percentage_or_fraction(parts[2])?;
+
+	let a = if parts.len() >= 4 {
+		parse_alpha_component(parts[3])?
+	} else {
+		1.0
+	};
+
+	let (r, g, b) = hsl_to_rgb(h, s_val, l_val);
+	Some(SvgColor::new_rgba(r, g, b, a))
+}
+
+fn parse_hue(s: &str) -> Option<f64> {
+	let s = s.trim();
+	let s = s.strip_suffix("deg").unwrap_or(s);
+	s.parse::<f64>().ok()
+}
+
+fn parse_percentage_or_fraction(s: &str) -> Option<f64> {
+	let s = s.trim();
+	if let Some(pct) = s.strip_suffix('%') {
+		let num = pct.trim().parse::<f64>().ok()?;
+		Some((num / 100.0).clamp(0.0, 1.0))
+	} else {
+		let num = s.parse::<f64>().ok()?;
+		Some(num.clamp(0.0, 1.0))
+	}
+}
+
+fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (u8, u8, u8) {
+	let h = (h % 360.0 + 360.0) % 360.0;
+	let s = s.clamp(0.0, 1.0);
+	let l = l.clamp(0.0, 1.0);
+
+	let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+	let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+	let m = l - c / 2.0;
+
+	let (r1, g1, b1) = if h < 60.0 {
+		(c, x, 0.0)
+	} else if h < 120.0 {
+		(x, c, 0.0)
+	} else if h < 180.0 {
+		(0.0, c, x)
+	} else if h < 240.0 {
+		(0.0, x, c)
+	} else if h < 300.0 {
+		(x, 0.0, c)
+	} else {
+		(c, 0.0, x)
+	};
+
+	(
+		((r1 + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+		((g1 + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+		((b1 + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+	)
+}
+
 fn parse_color_component(s: &str) -> Option<u8> {
 	let s = s.trim();
 	if let Some(pct) = s.strip_suffix('%') {
@@ -266,40 +349,145 @@ fn parse_alpha_component(s: &str) -> Option<f64> {
 
 fn parse_named_color(s: &str) -> Option<SvgColor> {
 	let rgb = match s.to_ascii_lowercase().as_str() {
+		"aliceblue" => (240, 248, 255),
+		"antiquewhite" => (250, 235, 215),
+		"aqua" | "cyan" => (0, 255, 255),
+		"aquamarine" => (127, 255, 212),
+		"azure" => (240, 255, 255),
+		"beige" => (245, 245, 220),
+		"bisque" => (255, 228, 196),
 		"black" => (0, 0, 0),
-		"white" => (255, 255, 255),
-		"red" => (255, 0, 0),
-		"lime" | "green" => (0, 255, 0),
+		"blanchedalmond" => (255, 235, 205),
 		"blue" => (0, 0, 255),
-		"yellow" => (255, 255, 0),
-		"cyan" | "aqua" => (0, 255, 255),
-		"magenta" | "fuchsia" => (255, 0, 255),
-		"silver" => (192, 192, 192),
-		"gray" | "grey" => (128, 128, 128),
-		"maroon" => (128, 0, 0),
-		"olive" => (128, 128, 0),
-		"darkgreen" => (0, 100, 0),
-		"purple" => (128, 0, 128),
-		"teal" => (0, 128, 128),
-		"navy" => (0, 0, 128),
-		"orange" => (255, 165, 0),
-		"pink" => (255, 192, 203),
+		"blueviolet" => (138, 43, 226),
 		"brown" => (165, 42, 42),
-		"gold" => (255, 215, 0),
-		"coral" => (255, 127, 80),
-		"salmon" => (250, 128, 114),
-		"khaki" => (240, 230, 140),
-		"plum" => (221, 160, 221),
-		"violet" => (238, 130, 238),
-		"indigo" => (75, 0, 130),
-		"turquoise" => (64, 224, 208),
-		"skyblue" => (135, 206, 235),
-		"tan" => (210, 180, 140),
+		"burlywood" => (222, 184, 135),
+		"cadetblue" => (95, 158, 160),
+		"chartreuse" => (127, 255, 0),
 		"chocolate" => (210, 105, 30),
+		"coral" => (255, 127, 80),
+		"cornflowerblue" => (100, 149, 237),
+		"cornsilk" => (255, 248, 220),
 		"crimson" => (220, 20, 60),
-		"tomato" => (255, 99, 71),
+		"darkblue" => (0, 0, 139),
+		"darkcyan" => (0, 139, 139),
+		"darkgoldenrod" => (184, 134, 11),
 		"darkgray" | "darkgrey" => (169, 169, 169),
+		"darkgreen" => (0, 100, 0),
+		"darkkhaki" => (189, 183, 107),
+		"darkmagenta" => (139, 0, 139),
+		"darkolivegreen" => (85, 107, 47),
+		"darkorange" => (255, 140, 0),
+		"darkorchid" => (153, 50, 204),
+		"darkred" => (139, 0, 0),
+		"darksalmon" => (233, 150, 122),
+		"darkseagreen" => (143, 188, 143),
+		"darkslateblue" => (72, 61, 139),
+		"darkslategray" | "darkslategrey" => (47, 79, 79),
+		"darkturquoise" => (0, 206, 209),
+		"darkviolet" => (148, 0, 211),
+		"deeppink" => (255, 20, 147),
+		"deepskyblue" => (0, 191, 255),
+		"dimgray" | "dimgrey" => (105, 105, 105),
+		"dodgerblue" => (30, 144, 255),
+		"firebrick" => (178, 34, 34),
+		"floralwhite" => (255, 250, 240),
+		"forestgreen" => (34, 139, 34),
+		"fuchsia" | "magenta" => (255, 0, 255),
+		"gainsboro" => (220, 220, 220),
+		"ghostwhite" => (248, 248, 255),
+		"gold" => (255, 215, 0),
+		"goldenrod" => (218, 165, 32),
+		"gray" | "grey" => (128, 128, 128),
+		"green" => (0, 128, 0),
+		"greenyellow" => (173, 255, 47),
+		"honeydew" => (240, 255, 240),
+		"hotpink" => (255, 105, 180),
+		"indianred" => (205, 92, 92),
+		"indigo" => (75, 0, 130),
+		"ivory" => (255, 255, 240),
+		"khaki" => (240, 230, 140),
+		"lavender" => (230, 230, 250),
+		"lavenderblush" => (255, 240, 245),
+		"lawngreen" => (124, 252, 0),
+		"lemonchiffon" => (255, 250, 205),
+		"lightblue" => (173, 216, 230),
+		"lightcoral" => (240, 128, 128),
+		"lightcyan" => (224, 255, 255),
+		"lightgoldenrodyellow" => (250, 250, 210),
 		"lightgray" | "lightgrey" => (211, 211, 211),
+		"lightgreen" => (144, 238, 144),
+		"lightpink" => (255, 182, 193),
+		"lightsalmon" => (255, 160, 122),
+		"lightseagreen" => (32, 178, 170),
+		"lightskyblue" => (135, 206, 250),
+		"lightslategray" | "lightslategrey" => (119, 136, 153),
+		"lightsteelblue" => (176, 196, 222),
+		"lightyellow" => (255, 255, 224),
+		"lime" => (0, 255, 0),
+		"limegreen" => (50, 205, 50),
+		"linen" => (250, 240, 230),
+		"maroon" => (128, 0, 0),
+		"mediumaquamarine" => (102, 205, 170),
+		"mediumblue" => (0, 0, 205),
+		"mediumorchid" => (186, 85, 211),
+		"mediumpurple" => (147, 112, 219),
+		"mediumseagreen" => (60, 179, 113),
+		"mediumslateblue" => (123, 104, 238),
+		"mediumspringgreen" => (0, 250, 154),
+		"mediumturquoise" => (72, 209, 204),
+		"mediumvioletred" => (199, 21, 133),
+		"midnightblue" => (25, 25, 112),
+		"mintcream" => (245, 255, 250),
+		"mistyrose" => (255, 228, 225),
+		"moccasin" => (255, 228, 181),
+		"navajowhite" => (255, 222, 173),
+		"navy" => (0, 0, 128),
+		"oldlace" => (253, 245, 230),
+		"olive" => (128, 128, 0),
+		"olivedrab" => (107, 142, 35),
+		"orange" => (255, 165, 0),
+		"orangered" => (255, 69, 0),
+		"orchid" => (218, 112, 214),
+		"palegoldenrod" => (238, 232, 170),
+		"palegreen" => (152, 251, 152),
+		"paleturquoise" => (175, 238, 238),
+		"palevioletred" => (219, 112, 147),
+		"papayawhip" => (255, 239, 213),
+		"peachpuff" => (255, 218, 185),
+		"peru" => (205, 133, 63),
+		"pink" => (255, 192, 203),
+		"plum" => (221, 160, 221),
+		"powderblue" => (176, 224, 230),
+		"purple" => (128, 0, 128),
+		"rebeccapurple" => (102, 51, 153),
+		"red" => (255, 0, 0),
+		"rosybrown" => (188, 143, 143),
+		"royalblue" => (65, 105, 225),
+		"saddlebrown" => (139, 69, 19),
+		"salmon" => (250, 128, 114),
+		"sandybrown" => (244, 164, 96),
+		"seagreen" => (46, 139, 87),
+		"seashell" => (255, 245, 238),
+		"sienna" => (160, 82, 45),
+		"silver" => (192, 192, 192),
+		"skyblue" => (135, 206, 235),
+		"slateblue" => (106, 90, 205),
+		"slategray" | "slategrey" => (112, 128, 144),
+		"snow" => (255, 250, 250),
+		"springgreen" => (0, 255, 127),
+		"steelblue" => (70, 130, 180),
+		"tan" => (210, 180, 140),
+		"teal" => (0, 128, 128),
+		"thistle" => (216, 191, 216),
+		"tomato" => (255, 99, 71),
+		"turquoise" => (64, 224, 208),
+		"violet" => (238, 130, 238),
+		"wheat" => (245, 222, 179),
+		"white" => (255, 255, 255),
+		"whitesmoke" => (245, 245, 245),
+		"yellow" => (255, 255, 0),
+		"yellowgreen" => (154, 205, 50),
 		_ => return None,
 	};
 
@@ -324,6 +512,8 @@ mod tests {
 		let red_name = parse_color("red").ok_or("Failed parsing red")?;
 		let red_rgb = parse_color("rgb(255, 0, 0)").ok_or("Failed parsing rgb")?;
 		let red_rgba = parse_color("rgba(255, 0, 0, 0.5)").ok_or("Failed parsing rgba")?;
+		let red_hsl = parse_color("hsl(0, 100%, 50%)").ok_or("Failed parsing hsl")?;
+		let red_hsla = parse_color("hsla(0, 100%, 50%, 0.75)").ok_or("Failed parsing hsla")?;
 
 		// -- Check
 		assert_eq!(red_hex, SvgColor::new_rgb(255, 0, 0));
@@ -331,6 +521,8 @@ mod tests {
 		assert_eq!(red_name, SvgColor::new_rgb(255, 0, 0));
 		assert_eq!(red_rgb, SvgColor::new_rgb(255, 0, 0));
 		assert_eq!(red_rgba, SvgColor::new_rgba(255, 0, 0, 0.5));
+		assert_eq!(red_hsl, SvgColor::new_rgba(255, 0, 0, 1.0));
+		assert_eq!(red_hsla, SvgColor::new_rgba(255, 0, 0, 0.75));
 
 		Ok(())
 	}

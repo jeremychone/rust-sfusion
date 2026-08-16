@@ -2,7 +2,7 @@ use super::naming::NameTracker;
 use super::polyline::segments_to_polylines;
 use crate::ast::*;
 use crate::error::Result;
-use crate::svg::{element_to_segments, NormalizedSegment, Point};
+use crate::svg::{element_to_segments, parse_color, NormalizedSegment, Point};
 
 // Layout grid constants for DaVinci Resolve Fusion operator spacing
 const DEFAULT_START_X: f64 = 1980.0;
@@ -119,8 +119,8 @@ impl GraphBuilder {
 			sw / denom
 		});
 		let (red, green, blue, opacity) = resolve_color_and_opacity(&effective_style);
-		let mut last_name = None;
 		let (mask_width, mask_height) = view_box.scaled_1080p_dimensions();
+		let mut shape_tool_names = Vec::new();
 
 		for poly in polylines {
 			let name = self.name_tracker.generate_unique_name(explicit_id);
@@ -141,10 +141,22 @@ impl GraphBuilder {
 			};
 
 			self.tools.push(FusionTool::SPolygon(spolygon));
-			last_name = Some(name);
+			shape_tool_names.push(name);
 		}
 
-		Ok(last_name)
+		if shape_tool_names.len() > 1 {
+			let merge_name = self.name_tracker.generate_unique_name(explicit_id.or(Some("loop")));
+			let pos = self.next_merge_pos();
+			let s_merge = SMerge {
+				name: merge_name.clone(),
+				inputs: shape_tool_names,
+				view_info: pos,
+			};
+			self.tools.push(FusionTool::SMerge(s_merge));
+			Ok(Some(merge_name))
+		} else {
+			Ok(shape_tool_names.pop())
+		}
 	}
 
 	fn process_group(
@@ -267,14 +279,29 @@ fn get_element_id(element: &SvgElement) -> Option<&str> {
 fn resolve_color_and_opacity(
 	style: &SvgStyle,
 ) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
-	let (paint, is_stroke) = match (&style.fill, &style.stroke) {
-		(Some(SvgPaint::Color(c)), _) => (Some(c), false),
-		(Some(SvgPaint::None), Some(SvgPaint::Color(c))) => (Some(c), true),
-		(None, Some(SvgPaint::Color(c))) => (Some(c), true),
+	let resolve_paint = |paint: &Option<SvgPaint>| -> Option<SvgColor> {
+		match paint {
+			Some(SvgPaint::Color(c)) => Some(c.clone()),
+			Some(SvgPaint::CurrentColor) => {
+				let color_val = style
+					.extra
+					.as_ref()
+					.and_then(|m| m.get("color"))
+					.and_then(|c| parse_color(c));
+				Some(color_val.unwrap_or_else(|| SvgColor::new_rgb(0, 0, 0)))
+			}
+			_ => None,
+		}
+	};
+
+	let (paint_color, is_stroke) = match (&style.fill, &style.stroke) {
+		(Some(SvgPaint::Color(_)), _) | (Some(SvgPaint::CurrentColor), _) => (resolve_paint(&style.fill), false),
+		(Some(SvgPaint::None), Some(stroke)) if *stroke != SvgPaint::None => (resolve_paint(&style.stroke), true),
+		(None, Some(stroke)) if *stroke != SvgPaint::None => (resolve_paint(&style.stroke), true),
 		_ => (None, false),
 	};
 
-	let (red, green, blue, color_alpha) = if let Some(c) = paint {
+	let (red, green, blue, color_alpha) = if let Some(c) = paint_color {
 		(
 			Some(c.r as f64 / 255.0),
 			Some(c.g as f64 / 255.0),
@@ -670,6 +697,178 @@ mod tests {
 			assert!((p0.y - 0.3).abs() < 1e-6);
 		} else {
 			return Err("Expected SPolygon box".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_layer_ordering_three_elements() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 100.0, 100.0)),
+			width: Some(100.0),
+			height: Some(100.0),
+			defs: SvgDefs::default(),
+			elements: vec![
+				SvgElement::Rect(SvgRect {
+					id: Some("layer_bottom".to_string()),
+					transform: None,
+					style: SvgStyle::default(),
+					x: 0.0,
+					y: 0.0,
+					width: 10.0,
+					height: 10.0,
+					rx: None,
+					ry: None,
+				}),
+				SvgElement::Circle(SvgCircle {
+					id: Some("layer_middle".to_string()),
+					transform: None,
+					style: SvgStyle::default(),
+					cx: 20.0,
+					cy: 20.0,
+					r: 5.0,
+				}),
+				SvgElement::Path(SvgPath {
+					id: Some("layer_top".to_string()),
+					transform: None,
+					style: SvgStyle::default(),
+					d: "M 30 30 L 40 40".to_string(),
+				}),
+			],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		let merge_tool = fusion_doc
+			.tools
+			.iter()
+			.find_map(|t| match t {
+				FusionTool::SMerge(m) => Some(m),
+				_ => None,
+			})
+			.ok_or("Expected SMerge tool")?;
+
+		assert_eq!(
+			merge_tool.inputs,
+			vec!["layer_bottom", "layer_middle", "layer_top"]
+		);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_multi_polyline_shape_ordering() -> Result<()> {
+		// -- Setup & Fixtures
+		// Two disjoint sub-paths in a single SVG path
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 100.0, 100.0)),
+			width: Some(100.0),
+			height: Some(100.0),
+			defs: SvgDefs::default(),
+			elements: vec![SvgElement::Path(SvgPath {
+				id: Some("multi_path".to_string()),
+				transform: None,
+				style: SvgStyle::default(),
+				d: "M 0 0 L 10 10 M 20 20 L 30 30".to_string(),
+			})],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 3);
+		let merge_tool = fusion_doc
+			.tools
+			.iter()
+			.find_map(|t| match t {
+				FusionTool::SMerge(m) => Some(m),
+				_ => None,
+			})
+			.ok_or("Expected SMerge tool for multi-subpath shape")?;
+
+		assert_eq!(merge_tool.inputs.len(), 2);
+		assert_eq!(merge_tool.inputs[0], "multi_path");
+		assert_eq!(merge_tool.inputs[1], "multi_path_1");
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_current_color_and_hsl() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 100.0, 100.0)),
+			width: Some(100.0),
+			height: Some(100.0),
+			defs: SvgDefs::default(),
+			elements: vec![
+				SvgElement::Group(SvgGroup {
+					id: Some("color_group".to_string()),
+					transform: None,
+					style: SvgStyle {
+						extra: Some({
+							let mut map = std::collections::HashMap::new();
+							map.insert("color".to_string(), "#00ff00".to_string());
+							map
+						}),
+						..Default::default()
+					},
+					children: vec![SvgElement::Rect(SvgRect {
+						id: Some("current_color_rect".to_string()),
+						transform: None,
+						style: SvgStyle {
+							fill: Some(SvgPaint::CurrentColor),
+							..Default::default()
+						},
+						x: 0.0,
+						y: 0.0,
+						width: 10.0,
+						height: 10.0,
+						rx: None,
+						ry: None,
+					})],
+				}),
+				SvgElement::Path(SvgPath {
+					id: Some("hsl_path".to_string()),
+					transform: None,
+					style: SvgStyle {
+						fill: Some(SvgPaint::None),
+						stroke: Some(SvgPaint::Color(SvgColor::new_rgba(255, 0, 0, 0.5))),
+						stroke_width: Some(2.0),
+						..Default::default()
+					},
+					d: "M 0 0 L 10 10".to_string(),
+				}),
+			],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 3);
+		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
+			assert_eq!(p1.name, "color_group");
+			assert_eq!(p1.red, Some(0.0));
+			assert_eq!(p1.green, Some(1.0));
+			assert_eq!(p1.blue, Some(0.0));
+		} else {
+			return Err("Expected color_group SPolygon".into());
+		}
+
+		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
+			assert_eq!(p2.name, "hsl_path");
+			assert_eq!(p2.red, Some(1.0));
+			assert_eq!(p2.green, Some(0.0));
+			assert_eq!(p2.blue, Some(0.0));
+			assert_eq!(p2.opacity, Some(0.5));
+		} else {
+			return Err("Expected hsl_path SPolygon".into());
 		}
 
 		Ok(())
