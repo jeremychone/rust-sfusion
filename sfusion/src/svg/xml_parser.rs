@@ -3,6 +3,19 @@ use quick_xml::Reader;
 
 use crate::ast::*;
 use crate::error::{Error, Result};
+use crate::svg::style_parser::{
+	parse_color, parse_dimension, parse_fill_rule, parse_paint, parse_stroke_dasharray, parse_stroke_linecap,
+	parse_stroke_linejoin, parse_style_str,
+};
+
+// region:    --- Types
+
+enum CurrentGradient {
+	Linear(SvgLinearGradient),
+	Radial(SvgRadialGradient),
+}
+
+// endregion: --- Types
 
 // region:    --- Public Functions
 
@@ -15,10 +28,12 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 		view_box: None,
 		width: None,
 		height: None,
+		defs: SvgDefs::default(),
 		elements: Vec::new(),
 	};
 
 	let mut group_stack: Vec<SvgGroup> = Vec::new();
+	let mut current_gradient: Option<CurrentGradient> = None;
 	let mut buf = Vec::new();
 
 	loop {
@@ -29,14 +44,32 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 					b"svg" => {
 						parse_svg_attributes(e, &mut doc)?;
 					}
+					b"defs" => {
+						// Defs container, children parsed directly
+					}
+					b"linearGradient" => {
+						current_gradient = Some(CurrentGradient::Linear(parse_linear_gradient(e)?));
+					}
+					b"radialGradient" => {
+						current_gradient = Some(CurrentGradient::Radial(parse_radial_gradient(e)?));
+					}
+					b"stop" => {
+						if let Some(ref mut grad) = current_gradient {
+							let stop = parse_gradient_stop(e)?;
+							match grad {
+								CurrentGradient::Linear(l) => l.stops.push(stop),
+								CurrentGradient::Radial(r) => r.stops.push(stop),
+							}
+						}
+					}
 					b"g" => {
 						let id = get_attribute_str(e, b"id")?;
 						let transform = get_attribute_transform(e)?;
-						let stroke_width = get_attribute_stroke_width(e)?;
+						let style = parse_element_style(e)?;
 						group_stack.push(SvgGroup {
 							id,
 							transform,
-							stroke_width,
+							style,
 							children: Vec::new(),
 						});
 					}
@@ -53,6 +86,23 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 					b"svg" => {
 						parse_svg_attributes(e, &mut doc)?;
 					}
+					b"linearGradient" => {
+						let grad = parse_linear_gradient(e)?;
+						doc.defs.gradients.insert(grad.id.clone(), SvgGradient::Linear(grad));
+					}
+					b"radialGradient" => {
+						let grad = parse_radial_gradient(e)?;
+						doc.defs.gradients.insert(grad.id.clone(), SvgGradient::Radial(grad));
+					}
+					b"stop" => {
+						if let Some(ref mut grad) = current_gradient {
+							let stop = parse_gradient_stop(e)?;
+							match grad {
+								CurrentGradient::Linear(l) => l.stops.push(stop),
+								CurrentGradient::Radial(r) => r.stops.push(stop),
+							}
+						}
+					}
 					_ => {
 						if let Some(element) = parse_element(e)? {
 							append_element(&mut doc, &mut group_stack, element);
@@ -62,11 +112,26 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 			}
 			Ok(Event::End(ref e)) => {
 				let local_name = e.local_name();
-				if local_name.as_ref() == b"g"
-					&& let Some(group) = group_stack.pop()
-				{
-					let group_elem = SvgElement::Group(group);
-					append_element(&mut doc, &mut group_stack, group_elem);
+				match local_name.as_ref() {
+					b"linearGradient" | b"radialGradient" => {
+						if let Some(grad) = current_gradient.take() {
+							match grad {
+								CurrentGradient::Linear(l) => {
+									doc.defs.gradients.insert(l.id.clone(), SvgGradient::Linear(l));
+								}
+								CurrentGradient::Radial(r) => {
+									doc.defs.gradients.insert(r.id.clone(), SvgGradient::Radial(r));
+								}
+							}
+						}
+					}
+					b"g" => {
+						if let Some(group) = group_stack.pop() {
+							let group_elem = SvgElement::Group(group);
+							append_element(&mut doc, &mut group_stack, group_elem);
+						}
+					}
+					_ => {}
 				}
 			}
 			Ok(Event::Eof) => break,
@@ -107,16 +172,99 @@ fn parse_svg_attributes(e: &quick_xml::events::BytesStart<'_>, doc: &mut SvgDoc)
 	Ok(())
 }
 
+fn parse_linear_gradient(e: &quick_xml::events::BytesStart<'_>) -> Result<SvgLinearGradient> {
+	let id = get_attribute_str(e, b"id")?.unwrap_or_default();
+	let x1 = get_attribute_f64(e, b"x1")?;
+	let y1 = get_attribute_f64(e, b"y1")?;
+	let x2 = get_attribute_f64(e, b"x2")?;
+	let y2 = get_attribute_f64(e, b"y2")?;
+	let transform = get_attribute_transform(e)?.or_else(|| get_attribute_gradient_transform(e).ok().flatten());
+
+	Ok(SvgLinearGradient {
+		id,
+		x1,
+		y1,
+		x2,
+		y2,
+		stops: Vec::new(),
+		transform,
+	})
+}
+
+fn parse_radial_gradient(e: &quick_xml::events::BytesStart<'_>) -> Result<SvgRadialGradient> {
+	let id = get_attribute_str(e, b"id")?.unwrap_or_default();
+	let cx = get_attribute_f64(e, b"cx")?;
+	let cy = get_attribute_f64(e, b"cy")?;
+	let r = get_attribute_f64(e, b"r")?;
+	let fx = get_attribute_f64(e, b"fx")?;
+	let fy = get_attribute_f64(e, b"fy")?;
+	let transform = get_attribute_transform(e)?.or_else(|| get_attribute_gradient_transform(e).ok().flatten());
+
+	Ok(SvgRadialGradient {
+		id,
+		cx,
+		cy,
+		r,
+		fx,
+		fy,
+		stops: Vec::new(),
+		transform,
+	})
+}
+
+fn parse_gradient_stop(e: &quick_xml::events::BytesStart<'_>) -> Result<SvgGradientStop> {
+	let offset = get_attribute_f64(e, b"offset")?.unwrap_or(0.0);
+
+	let mut color = None;
+	let mut opacity = None;
+
+	if let Some(color_str) = get_attribute_str(e, b"stop-color")? {
+		color = parse_color(&color_str);
+	}
+	if let Some(op_str) = get_attribute_str(e, b"stop-opacity")? {
+		opacity = parse_dimension(&op_str);
+	}
+
+	if let Some(style_str) = get_attribute_str(e, b"style")? {
+		for decl in style_str.split(';') {
+			let mut parts = decl.splitn(2, ':');
+			if let Some(k) = parts.next()
+				&& let Some(v) = parts.next()
+			{
+				match k.trim() {
+					"stop-color" => {
+						if let Some(c) = parse_color(v.trim()) {
+							color = Some(c);
+						}
+					}
+					"stop-opacity" => {
+						if let Some(op) = parse_dimension(v.trim()) {
+							opacity = Some(op);
+						}
+					}
+					_ => {}
+				}
+			}
+		}
+	}
+
+	Ok(SvgGradientStop {
+		offset,
+		color: color.unwrap_or_else(|| SvgColor::new_rgb(0, 0, 0)),
+		opacity,
+	})
+}
+
 fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElement>> {
 	let local_name = e.local_name();
 	let id = get_attribute_str(e, b"id")?;
 	let transform = get_attribute_transform(e)?;
-	let stroke_width = get_attribute_stroke_width(e)?;
+	let style = parse_element_style(e)?;
 
 	match local_name.as_ref() {
 		b"path" => {
 			let d = get_attribute_str(e, b"d")?.unwrap_or_default();
-			Ok(Some(SvgElement::Path(SvgPath { id, transform, stroke_width, d })))
+			Ok(Some(SvgElement::Path(SvgPath { id, transform, style, d })))
 		}
 		b"rect" => {
 			let x = get_attribute_f64(e, b"x")?.unwrap_or(0.0);
@@ -128,7 +276,7 @@ fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElem
 			Ok(Some(SvgElement::Rect(SvgRect {
 				id,
 				transform,
-				stroke_width,
+				style,
 				x,
 				y,
 				width,
@@ -141,31 +289,31 @@ fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElem
 			let cx = get_attribute_f64(e, b"cx")?.unwrap_or(0.0);
 			let cy = get_attribute_f64(e, b"cy")?.unwrap_or(0.0);
 			let r = get_attribute_f64(e, b"r")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Circle(SvgCircle { id, transform, stroke_width, cx, cy, r })))
+			Ok(Some(SvgElement::Circle(SvgCircle { id, transform, style, cx, cy, r })))
 		}
 		b"ellipse" => {
 			let cx = get_attribute_f64(e, b"cx")?.unwrap_or(0.0);
 			let cy = get_attribute_f64(e, b"cy")?.unwrap_or(0.0);
 			let rx = get_attribute_f64(e, b"rx")?.unwrap_or(0.0);
 			let ry = get_attribute_f64(e, b"ry")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Ellipse(SvgEllipse { id, transform, stroke_width, cx, cy, rx, ry })))
+			Ok(Some(SvgElement::Ellipse(SvgEllipse { id, transform, style, cx, cy, rx, ry })))
 		}
 		b"line" => {
 			let x1 = get_attribute_f64(e, b"x1")?.unwrap_or(0.0);
 			let y1 = get_attribute_f64(e, b"y1")?.unwrap_or(0.0);
 			let x2 = get_attribute_f64(e, b"x2")?.unwrap_or(0.0);
 			let y2 = get_attribute_f64(e, b"y2")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Line(SvgLine { id, transform, stroke_width, x1, y1, x2, y2 })))
+			Ok(Some(SvgElement::Line(SvgLine { id, transform, style, x1, y1, x2, y2 })))
 		}
 		b"polyline" => {
 			let points_str = get_attribute_str(e, b"points")?.unwrap_or_default();
 			let points = parse_points_list(&points_str);
-			Ok(Some(SvgElement::Polyline(SvgPolyline { id, transform, stroke_width, points })))
+			Ok(Some(SvgElement::Polyline(SvgPolyline { id, transform, style, points })))
 		}
 		b"polygon" => {
 			let points_str = get_attribute_str(e, b"points")?.unwrap_or_default();
 			let points = parse_points_list(&points_str);
-			Ok(Some(SvgElement::Polygon(SvgPolygon { id, transform, stroke_width, points })))
+			Ok(Some(SvgElement::Polygon(SvgPolygon { id, transform, style, points })))
 		}
 		_ => Ok(None),
 	}
@@ -200,31 +348,53 @@ fn get_attribute_transform(e: &quick_xml::events::BytesStart<'_>) -> Result<Opti
 	}
 }
 
-fn get_attribute_stroke_width(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<f64>> {
-	if let Some(val) = get_attribute_f64(e, b"stroke-width")? {
-		return Ok(Some(val));
+fn get_attribute_gradient_transform(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<Transform2D>> {
+	if let Some(t_str) = get_attribute_str(e, b"gradientTransform")? {
+		Ok(parse_transform(&t_str))
+	} else {
+		Ok(None)
 	}
-
-	if let Some(style_str) = get_attribute_str(e, b"style")?
-		&& let Some(val) = parse_style_stroke_width(&style_str)
-	{
-		return Ok(Some(val));
-	}
-
-	Ok(None)
 }
 
-fn parse_style_stroke_width(style: &str) -> Option<f64> {
-	for decl in style.split(';') {
-		let mut parts = decl.splitn(2, ':');
-		if let Some(key) = parts.next()
-			&& let Some(val) = parts.next()
-			&& key.trim() == "stroke-width"
-		{
-			return parse_dimension(val);
+fn parse_element_style(e: &quick_xml::events::BytesStart<'_>) -> Result<SvgStyle> {
+	let mut pres_style = SvgStyle::default();
+	let mut inline_style: Option<SvgStyle> = None;
+
+	for attr in e.attributes().flatten() {
+		let key = attr.key.as_ref();
+		let val = attr
+			.unescape_value()
+			.map_err(|err| Error::custom(format!("Invalid attribute value: {err}")))?;
+		let val_str = val.trim();
+		if val_str.is_empty() {
+			continue;
+		}
+
+		match key {
+			b"fill" => pres_style.fill = parse_paint(val_str),
+			b"fill-opacity" => pres_style.fill_opacity = parse_dimension(val_str),
+			b"fill-rule" => pres_style.fill_rule = parse_fill_rule(val_str),
+			b"stroke" => pres_style.stroke = parse_paint(val_str),
+			b"stroke-width" => pres_style.stroke_width = parse_dimension(val_str),
+			b"stroke-opacity" => pres_style.stroke_opacity = parse_dimension(val_str),
+			b"stroke-linecap" => pres_style.stroke_linecap = parse_stroke_linecap(val_str),
+			b"stroke-linejoin" => pres_style.stroke_linejoin = parse_stroke_linejoin(val_str),
+			b"stroke-miterlimit" => pres_style.stroke_miterlimit = parse_dimension(val_str),
+			b"stroke-dasharray" => pres_style.stroke_dasharray = parse_stroke_dasharray(val_str),
+			b"stroke-dashoffset" => pres_style.stroke_dashoffset = parse_dimension(val_str),
+			b"opacity" => pres_style.opacity = parse_dimension(val_str),
+			b"style" => {
+				inline_style = Some(parse_style_str(val_str));
+			}
+			_ => {}
 		}
 	}
-	None
+
+	if let Some(inline) = inline_style {
+		Ok(inline.inherit_from(&pres_style))
+	} else {
+		Ok(pres_style)
+	}
 }
 
 fn parse_view_box(s: &str) -> Option<SvgViewBox> {
@@ -239,12 +409,6 @@ fn parse_view_box(s: &str) -> Option<SvgViewBox> {
 	} else {
 		None
 	}
-}
-
-fn parse_dimension(s: &str) -> Option<f64> {
-	let s = s.trim();
-	let s = s.trim_end_matches("px").trim_end_matches("pt").trim();
-	s.parse::<f64>().ok()
 }
 
 fn parse_points_list(s: &str) -> Vec<(f64, f64)> {
@@ -410,22 +574,118 @@ mod tests {
 		// -- Check
 		assert_eq!(doc.elements.len(), 1);
 		if let SvgElement::Group(g) = &doc.elements[0] {
-			assert_eq!(g.stroke_width, Some(2.5));
+			assert_eq!(g.style.stroke_width, Some(2.5));
 			assert_eq!(g.children.len(), 2);
 
 			if let SvgElement::Path(p) = &g.children[0] {
-				assert_eq!(p.stroke_width, Some(1.0));
+				assert_eq!(p.style.stroke_width, Some(1.0));
 			} else {
 				return Err("Expected path child".into());
 			}
 
 			if let SvgElement::Rect(r) = &g.children[1] {
-				assert_eq!(r.stroke_width, Some(3.5));
+				assert_eq!(r.style.stroke_width, Some(3.5));
 			} else {
 				return Err("Expected rect child".into());
 			}
 		} else {
 			return Err("Expected group element".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_svg_parser_defs_and_gradients() -> Result<()> {
+		// -- Setup & Fixtures
+		let xml = r##"<svg viewBox="0 0 100 100">
+			<defs>
+				<linearGradient id="grad_linear" x1="0%" y1="0%" x2="100%" y2="100%" gradientTransform="rotate(45)">
+					<stop offset="0%" stop-color="#ff0000" stop-opacity="1"/>
+					<stop offset="100%" style="stop-color: #0000ff; stop-opacity: 0.5"/>
+				</linearGradient>
+				<radialGradient id="grad_radial" cx="0.5" cy="0.5" r="0.5" fx="0.2" fy="0.2">
+					<stop offset="0" stop-color="white"/>
+					<stop offset="1" stop-color="black"/>
+				</radialGradient>
+			</defs>
+			<rect id="r1" x="0" y="0" width="100" height="100"/>
+		</svg>"##;
+
+		// -- Exec
+		let doc = parse_svg(xml)?;
+
+		// -- Check
+		assert_eq!(doc.defs.gradients.len(), 2);
+
+		let linear = match doc.defs.gradients.get("grad_linear") {
+			Some(SvgGradient::Linear(l)) => l,
+			_ => return Err("Expected linear gradient grad_linear".into()),
+		};
+		assert_eq!(linear.id, "grad_linear");
+		assert_eq!(linear.x1, Some(0.0));
+		assert_eq!(linear.y1, Some(0.0));
+		assert_eq!(linear.x2, Some(1.0));
+		assert_eq!(linear.y2, Some(1.0));
+		assert!(linear.transform.is_some());
+		assert_eq!(linear.stops.len(), 2);
+		assert_eq!(linear.stops[0].offset, 0.0);
+		assert_eq!(linear.stops[0].color, SvgColor::new_rgb(255, 0, 0));
+		assert_eq!(linear.stops[0].opacity, Some(1.0));
+		assert_eq!(linear.stops[1].offset, 1.0);
+		assert_eq!(linear.stops[1].color, SvgColor::new_rgb(0, 0, 255));
+		assert_eq!(linear.stops[1].opacity, Some(0.5));
+
+		let radial = match doc.defs.gradients.get("grad_radial") {
+			Some(SvgGradient::Radial(r)) => r,
+			_ => return Err("Expected radial gradient grad_radial".into()),
+		};
+		assert_eq!(radial.id, "grad_radial");
+		assert_eq!(radial.cx, Some(0.5));
+		assert_eq!(radial.cy, Some(0.5));
+		assert_eq!(radial.r, Some(0.5));
+		assert_eq!(radial.fx, Some(0.2));
+		assert_eq!(radial.fy, Some(0.2));
+		assert_eq!(radial.stops.len(), 2);
+		assert_eq!(radial.stops[0].color, SvgColor::new_rgb(255, 255, 255));
+		assert_eq!(radial.stops[1].color, SvgColor::new_rgb(0, 0, 0));
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_svg_parser_element_styles_and_inline_override() -> Result<()> {
+		// -- Setup & Fixtures
+		let xml = r##"<svg viewBox="0 0 100 100">
+			<rect id="r1" fill="red" stroke="#00ff00" stroke-width="4" fill-opacity="0.5" stroke-linecap="round" stroke-linejoin="bevel" stroke-dasharray="2, 4" opacity="0.9"/>
+			<circle id="c1" cx="50" cy="50" r="20" fill="red" stroke="blue" stroke-width="2" style="fill: yellow; stroke-width: 6px"/>
+		</svg>"##;
+
+		// -- Exec
+		let doc = parse_svg(xml)?;
+
+		// -- Check
+		assert_eq!(doc.elements.len(), 2);
+
+		if let SvgElement::Rect(r) = &doc.elements[0] {
+			assert_eq!(r.style.fill, Some(SvgPaint::Color(SvgColor::new_rgb(255, 0, 0))));
+			assert_eq!(r.style.stroke, Some(SvgPaint::Color(SvgColor::new_rgb(0, 255, 0))));
+			assert_eq!(r.style.stroke_width, Some(4.0));
+			assert_eq!(r.style.fill_opacity, Some(0.5));
+			assert_eq!(r.style.stroke_linecap, Some(StrokeLinecap::Round));
+			assert_eq!(r.style.stroke_linejoin, Some(StrokeLinejoin::Bevel));
+			assert_eq!(r.style.stroke_dasharray, Some(vec![2.0, 4.0]));
+			assert_eq!(r.style.opacity, Some(0.9));
+		} else {
+			return Err("Expected Rect element".into());
+		}
+
+		if let SvgElement::Circle(c) = &doc.elements[1] {
+			assert_eq!(c.style.fill, Some(SvgPaint::Color(SvgColor::new_rgb(255, 255, 0))));
+			assert_eq!(c.style.stroke, Some(SvgPaint::Color(SvgColor::new_rgb(0, 0, 255))));
+			assert_eq!(c.style.stroke_width, Some(6.0));
+		} else {
+			return Err("Expected Circle element".into());
 		}
 
 		Ok(())

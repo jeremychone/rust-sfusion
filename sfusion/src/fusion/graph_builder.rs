@@ -31,7 +31,7 @@ pub fn build_fusion_doc(svg_doc: &SvgDoc) -> Result<FusionDoc> {
 	let mut top_output_names = Vec::new();
 
 	for element in &svg_doc.elements {
-		if let Some(out_name) = builder.process_element(element, &view_box, Transform2D::identity(), None)? {
+		if let Some(out_name) = builder.process_element(element, &view_box, Transform2D::identity(), &SvgStyle::default())? {
 			top_output_names.push(out_name);
 		}
 	}
@@ -82,11 +82,11 @@ impl GraphBuilder {
 		element: &SvgElement,
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
-		parent_stroke_width: Option<f64>,
+		parent_style: &SvgStyle,
 	) -> Result<Option<String>> {
 		match element {
-			SvgElement::Group(group) => self.process_group(group, view_box, parent_tf, parent_stroke_width),
-			_ => self.process_shape(element, view_box, parent_tf, parent_stroke_width),
+			SvgElement::Group(group) => self.process_group(group, view_box, parent_tf, parent_style),
+			_ => self.process_shape(element, view_box, parent_tf, parent_style),
 		}
 	}
 
@@ -95,7 +95,7 @@ impl GraphBuilder {
 		element: &SvgElement,
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
-		parent_stroke_width: Option<f64>,
+		parent_style: &SvgStyle,
 	) -> Result<Option<String>> {
 		let elem_tf = get_element_transform(element).unwrap_or_default();
 		let total_tf = parent_tf.multiply(&elem_tf);
@@ -112,8 +112,8 @@ impl GraphBuilder {
 		}
 
 		let explicit_id = get_element_id(element);
-		let elem_stroke_width = get_element_stroke_width(element).or(parent_stroke_width);
-		let border_width = elem_stroke_width.map(|sw| {
+		let effective_style = element.style().inherit_from(parent_style);
+		let border_width = effective_style.stroke_width.map(|sw| {
 			let denom = if view_box.width == 0.0 { 1.0 } else { view_box.width };
 			sw / denom
 		});
@@ -145,16 +145,16 @@ impl GraphBuilder {
 		group: &SvgGroup,
 		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
-		parent_stroke_width: Option<f64>,
+		parent_style: &SvgStyle,
 	) -> Result<Option<String>> {
 		let group_tf = group.transform.unwrap_or_default();
 		let total_tf = parent_tf.multiply(&group_tf);
-		let effective_stroke_width = group.stroke_width.or(parent_stroke_width);
+		let effective_style = group.style.inherit_from(parent_style);
 
 		let mut child_names = Vec::new();
 
 		for child in &group.children {
-			if let Some(name) = self.process_element(child, view_box, total_tf, effective_stroke_width)? {
+			if let Some(name) = self.process_element(child, view_box, total_tf, &effective_style)? {
 				child_names.push(name);
 			}
 		}
@@ -256,20 +256,6 @@ fn get_element_id(element: &SvgElement) -> Option<&str> {
 		SvgElement::Group(g) => g.id.as_deref(),
 	}
 }
-
-fn get_element_stroke_width(element: &SvgElement) -> Option<f64> {
-	match element {
-		SvgElement::Path(p) => p.stroke_width,
-		SvgElement::Rect(r) => r.stroke_width,
-		SvgElement::Circle(c) => c.stroke_width,
-		SvgElement::Ellipse(e) => e.stroke_width,
-		SvgElement::Line(l) => l.stroke_width,
-		SvgElement::Polyline(pl) => pl.stroke_width,
-		SvgElement::Polygon(pg) => pg.stroke_width,
-		SvgElement::Group(g) => g.stroke_width,
-	}
-}
-
 // endregion: --- Support
 
 // region:    --- Tests
@@ -287,17 +273,18 @@ mod tests {
 			view_box: Some(SvgViewBox::new(0.0, 0.0, 320.0, 240.0)),
 			width: Some(320.0),
 			height: Some(240.0),
+			defs: SvgDefs::default(),
 			elements: vec![
 				SvgElement::Path(SvgPath {
 					id: Some("poly_1".to_string()),
 					transform: None,
-					stroke_width: None,
+					style: SvgStyle::default(),
 					d: "M 10 20 L 30 40 Z".to_string(),
 				}),
 				SvgElement::Rect(SvgRect {
 					id: Some("grabber".to_string()),
 					transform: None,
-					stroke_width: None,
+					style: SvgStyle::default(),
 					x: 10.0,
 					y: 20.0,
 					width: 50.0,
@@ -349,14 +336,15 @@ mod tests {
 			view_box: Some(SvgViewBox::new(0.0, 0.0, 320.0, 240.0)),
 			width: Some(320.0),
 			height: Some(240.0),
+			defs: SvgDefs::default(),
 			elements: vec![SvgElement::Group(SvgGroup {
 				id: Some("grabber".to_string()),
 				transform: None,
-				stroke_width: None,
+				style: SvgStyle::default(),
 				children: vec![SvgElement::Circle(SvgCircle {
 					id: None,
 					transform: None,
-					stroke_width: None,
+					style: SvgStyle::default(),
 					cx: 50.0,
 					cy: 50.0,
 					r: 25.0,
@@ -386,21 +374,28 @@ mod tests {
 			view_box: Some(SvgViewBox::new(0.0, 0.0, 200.0, 100.0)),
 			width: Some(200.0),
 			height: Some(100.0),
+			defs: SvgDefs::default(),
 			elements: vec![SvgElement::Group(SvgGroup {
 				id: Some("styled_group".to_string()),
 				transform: None,
-				stroke_width: Some(4.0),
+				style: SvgStyle {
+					stroke_width: Some(4.0),
+					..Default::default()
+				},
 				children: vec![
 					SvgElement::Path(SvgPath {
 						id: Some("inherited_path".to_string()),
 						transform: None,
-						stroke_width: None,
+						style: SvgStyle::default(),
 						d: "M 0 0 L 10 10".to_string(),
 					}),
 					SvgElement::Path(SvgPath {
 						id: Some("override_path".to_string()),
 						transform: None,
-						stroke_width: Some(10.0),
+						style: SvgStyle {
+							stroke_width: Some(10.0),
+							..Default::default()
+						},
 						d: "M 10 10 L 20 20".to_string(),
 					}),
 				],
@@ -424,6 +419,78 @@ mod tests {
 			assert_eq!(p2.border_width, Some(10.0 / 200.0));
 		} else {
 			return Err("Expected override_path SPolygon".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_deep_nested_group_styles() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 400.0, 200.0)),
+			width: Some(400.0),
+			height: Some(200.0),
+			defs: SvgDefs::default(),
+			elements: vec![SvgElement::Group(SvgGroup {
+				id: Some("root_group".to_string()),
+				transform: None,
+				style: SvgStyle {
+					stroke_width: Some(8.0),
+					..Default::default()
+				},
+				children: vec![SvgElement::Group(SvgGroup {
+					id: Some("inner_group".to_string()),
+					transform: None,
+					style: SvgStyle::default(),
+					children: vec![
+						SvgElement::Rect(SvgRect {
+							id: Some("rect1".to_string()),
+							transform: None,
+							style: SvgStyle::default(),
+							x: 0.0,
+							y: 0.0,
+							width: 50.0,
+							height: 50.0,
+							rx: None,
+							ry: None,
+						}),
+						SvgElement::Rect(SvgRect {
+							id: Some("rect2".to_string()),
+							transform: None,
+							style: SvgStyle {
+								stroke_width: Some(2.0),
+								..Default::default()
+							},
+							x: 60.0,
+							y: 0.0,
+							width: 50.0,
+							height: 50.0,
+							rx: None,
+							ry: None,
+						}),
+					],
+				})],
+			})],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 3);
+		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
+			assert_eq!(p1.name, "rect1");
+			assert_eq!(p1.border_width, Some(8.0 / 400.0));
+		} else {
+			return Err("Expected rect1 SPolygon".into());
+		}
+
+		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
+			assert_eq!(p2.name, "rect2");
+			assert_eq!(p2.border_width, Some(2.0 / 400.0));
+		} else {
+			return Err("Expected rect2 SPolygon".into());
 		}
 
 		Ok(())

@@ -189,7 +189,7 @@ mod tests {
 		let rect = SvgElement::Rect(SvgRect {
 			id: None,
 			transform: None,
-			stroke_width: None,
+			style: crate::ast::SvgStyle::default(),
 			x: 0.0,
 			y: 0.0,
 			width: 100.0,

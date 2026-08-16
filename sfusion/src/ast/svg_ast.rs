@@ -1,4 +1,100 @@
+use std::collections::HashMap;
+
 // region:    --- Types
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SvgPaint {
+	None,
+	CurrentColor,
+	Color(SvgColor),
+	Url(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SvgColor {
+	pub r: u8,
+	pub g: u8,
+	pub b: u8,
+	pub a: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FillRule {
+	NonZero,
+	EvenOdd,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrokeLinecap {
+	Butt,
+	Round,
+	Square,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrokeLinejoin {
+	Miter,
+	Round,
+	Bevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SvgStyle {
+	pub fill: Option<SvgPaint>,
+	pub fill_opacity: Option<f64>,
+	pub fill_rule: Option<FillRule>,
+	pub stroke: Option<SvgPaint>,
+	pub stroke_width: Option<f64>,
+	pub stroke_opacity: Option<f64>,
+	pub stroke_linecap: Option<StrokeLinecap>,
+	pub stroke_linejoin: Option<StrokeLinejoin>,
+	pub stroke_miterlimit: Option<f64>,
+	pub stroke_dasharray: Option<Vec<f64>>,
+	pub stroke_dashoffset: Option<f64>,
+	pub opacity: Option<f64>,
+	pub extra: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SvgGradientStop {
+	pub offset: f64,
+	pub color: SvgColor,
+	pub opacity: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SvgGradient {
+	Linear(SvgLinearGradient),
+	Radial(SvgRadialGradient),
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SvgLinearGradient {
+	pub id: String,
+	pub x1: Option<f64>,
+	pub y1: Option<f64>,
+	pub x2: Option<f64>,
+	pub y2: Option<f64>,
+	pub stops: Vec<SvgGradientStop>,
+	pub transform: Option<Transform2D>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SvgRadialGradient {
+	pub id: String,
+	pub cx: Option<f64>,
+	pub cy: Option<f64>,
+	pub r: Option<f64>,
+	pub fx: Option<f64>,
+	pub fy: Option<f64>,
+	pub stops: Vec<SvgGradientStop>,
+	pub transform: Option<Transform2D>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SvgDefs {
+	pub gradients: HashMap<String, SvgGradient>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform2D {
@@ -47,11 +143,12 @@ impl Transform2D {
 	}
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgDoc {
 	pub view_box: Option<SvgViewBox>,
 	pub width: Option<f64>,
 	pub height: Option<f64>,
+	pub defs: SvgDefs,
 	pub elements: Vec<SvgElement>,
 }
 
@@ -79,7 +176,7 @@ pub enum SvgElement {
 pub struct SvgPath {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
-	pub stroke_width: Option<f64>,
+	pub style: SvgStyle,
 	pub d: String,
 }
 
@@ -87,7 +184,7 @@ pub struct SvgPath {
 pub struct SvgRect {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
-	pub stroke_width: Option<f64>,
+	pub style: SvgStyle,
 	pub x: f64,
 	pub y: f64,
 	pub width: f64,
@@ -100,7 +197,7 @@ pub struct SvgRect {
 pub struct SvgCircle {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
-	pub stroke_width: Option<f64>,
+	pub style: SvgStyle,
 	pub cx: f64,
 	pub cy: f64,
 	pub r: f64,
@@ -110,7 +207,7 @@ pub struct SvgCircle {
 pub struct SvgEllipse {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
-	pub stroke_width: Option<f64>,
+	pub style: SvgStyle,
 	pub cx: f64,
 	pub cy: f64,
 	pub rx: f64,
@@ -121,7 +218,7 @@ pub struct SvgEllipse {
 pub struct SvgLine {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
-	pub stroke_width: Option<f64>,
+	pub style: SvgStyle,
 	pub x1: f64,
 	pub y1: f64,
 	pub x2: f64,
@@ -132,7 +229,7 @@ pub struct SvgLine {
 pub struct SvgPolyline {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
-	pub stroke_width: Option<f64>,
+	pub style: SvgStyle,
 	pub points: Vec<(f64, f64)>,
 }
 
@@ -140,7 +237,7 @@ pub struct SvgPolyline {
 pub struct SvgPolygon {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
-	pub stroke_width: Option<f64>,
+	pub style: SvgStyle,
 	pub points: Vec<(f64, f64)>,
 }
 
@@ -148,13 +245,80 @@ pub struct SvgPolygon {
 pub struct SvgGroup {
 	pub id: Option<String>,
 	pub transform: Option<Transform2D>,
-	pub stroke_width: Option<f64>,
+	pub style: SvgStyle,
 	pub children: Vec<SvgElement>,
 }
 
 // endregion: --- Types
 
 // region:    --- Constructors
+
+impl SvgColor {
+	pub fn new_rgb(r: u8, g: u8, b: u8) -> Self {
+		Self { r, g, b, a: 1.0 }
+	}
+
+	pub fn new_rgba(r: u8, g: u8, b: u8, a: f64) -> Self {
+		Self { r, g, b, a }
+	}
+}
+
+impl SvgStyle {
+	pub fn inherit_from(&self, parent: &SvgStyle) -> SvgStyle {
+		SvgStyle {
+			fill: self.fill.clone().or_else(|| parent.fill.clone()),
+			fill_opacity: self.fill_opacity.or(parent.fill_opacity),
+			fill_rule: self.fill_rule.or(parent.fill_rule),
+			stroke: self.stroke.clone().or_else(|| parent.stroke.clone()),
+			stroke_width: self.stroke_width.or(parent.stroke_width),
+			stroke_opacity: self.stroke_opacity.or(parent.stroke_opacity),
+			stroke_linecap: self.stroke_linecap.or(parent.stroke_linecap),
+			stroke_linejoin: self.stroke_linejoin.or(parent.stroke_linejoin),
+			stroke_miterlimit: self.stroke_miterlimit.or(parent.stroke_miterlimit),
+			stroke_dasharray: self.stroke_dasharray.clone().or_else(|| parent.stroke_dasharray.clone()),
+			stroke_dashoffset: self.stroke_dashoffset.or(parent.stroke_dashoffset),
+			opacity: self.opacity.or(parent.opacity),
+			extra: match (&self.extra, &parent.extra) {
+				(Some(child_map), Some(parent_map)) => {
+					let mut merged = parent_map.clone();
+					merged.extend(child_map.clone());
+					Some(merged)
+				}
+				(Some(child_map), None) => Some(child_map.clone()),
+				(None, Some(parent_map)) => Some(parent_map.clone()),
+				(None, None) => None,
+			},
+		}
+	}
+}
+
+impl SvgElement {
+	pub fn style(&self) -> &SvgStyle {
+		match self {
+			SvgElement::Path(p) => &p.style,
+			SvgElement::Rect(r) => &r.style,
+			SvgElement::Circle(c) => &c.style,
+			SvgElement::Ellipse(e) => &e.style,
+			SvgElement::Line(l) => &l.style,
+			SvgElement::Polyline(pl) => &pl.style,
+			SvgElement::Polygon(pg) => &pg.style,
+			SvgElement::Group(g) => &g.style,
+		}
+	}
+
+	pub fn style_mut(&mut self) -> &mut SvgStyle {
+		match self {
+			SvgElement::Path(p) => &mut p.style,
+			SvgElement::Rect(r) => &mut r.style,
+			SvgElement::Circle(c) => &mut c.style,
+			SvgElement::Ellipse(e) => &mut e.style,
+			SvgElement::Line(l) => &mut l.style,
+			SvgElement::Polyline(pl) => &mut pl.style,
+			SvgElement::Polygon(pg) => &mut pg.style,
+			SvgElement::Group(g) => &mut g.style,
+		}
+	}
+}
 
 impl SvgDoc {
 	pub fn effective_view_box(&self) -> SvgViewBox {
@@ -183,3 +347,44 @@ impl SvgViewBox {
 }
 
 // endregion: --- Constructors
+
+// region:    --- Tests
+
+#[cfg(test)]
+mod tests {
+	type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+
+	use super::*;
+
+	#[test]
+	fn test_ast_svg_style_inheritance() -> Result<()> {
+		// -- Setup & Fixtures
+		let parent = SvgStyle {
+			stroke_width: Some(4.0),
+			fill: Some(SvgPaint::Color(SvgColor::new_rgb(255, 0, 0))),
+			fill_opacity: Some(0.8),
+			stroke_linecap: Some(StrokeLinecap::Round),
+			..Default::default()
+		};
+		let child = SvgStyle {
+			stroke_width: Some(2.0),
+			fill: None,
+			stroke: Some(SvgPaint::Color(SvgColor::new_rgb(0, 0, 255))),
+			..Default::default()
+		};
+
+		// -- Exec
+		let combined = child.inherit_from(&parent);
+
+		// -- Check
+		assert_eq!(combined.stroke_width, Some(2.0));
+		assert_eq!(combined.fill, Some(SvgPaint::Color(SvgColor::new_rgb(255, 0, 0))));
+		assert_eq!(combined.fill_opacity, Some(0.8));
+		assert_eq!(combined.stroke, Some(SvgPaint::Color(SvgColor::new_rgb(0, 0, 255))));
+		assert_eq!(combined.stroke_linecap, Some(StrokeLinecap::Round));
+
+		Ok(())
+	}
+}
+
+// endregion: --- Tests
