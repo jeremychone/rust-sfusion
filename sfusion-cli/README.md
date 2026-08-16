@@ -12,34 +12,21 @@ cargo install --path sfusion-cli
 
 ### Convert File to Shape Output
 
-Generates `<stem>_fusion-shape.txt` alongside the source file:
-
 ```sh
-sfusion to-shape icon.svg
-```
+# Convert File to Shape Output
+sfusion to-shape pat/to/icon.svg
+# Generate `path/to/icon.svg.fusion-shape.txt` alongside the source file:
 
-### Convert Clipboard Content
-
-Inspects clipboard for SVG content, converts it, and writes the Fusion node data back to the clipboard:
-
-```sh
+# Convert Clipboard Content
 sfusion clip-swap
+# Inspects clipboard for SVG content, converts it, and writes the Fusion node data back to the clipboard:
+
 ```
 
-### General Conversion
+### Convert from Stdin
 
-Convert via positional path or options:
+Pipes SVG content from standard input and outputs DaVinci Resolve Fusion node data to standard output:
 
 ```sh
-# Positional syntax
-sfusion input.svg
-
-# Explicit input and output flags
-sfusion -i input.svg -o output.txt
-
-# Using the convert subcommand
-sfusion convert -i input.svg -o output.txt
-
-# Stdin and stdout pipeline
 cat input.svg | sfusion > output.txt
 ```
