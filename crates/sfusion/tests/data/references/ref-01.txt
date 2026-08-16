@@ -1,5 +1,46 @@
 {
 	Tools = ordered() {
+		grabber = sPolygon {
+			DrawMode = "ModifyOnly",
+			NameSet = true,
+			Inputs = {
+				MaskWidth = Input {
+					Value = Number {
+						Value = 320
+					},
+				},
+				PixelAspect = Input {
+					Value = Point {
+						X = 1,
+						Y = 1
+					},
+				},
+				MaskHeight = Input {
+					Value = Number {
+						Value = 240
+					},
+				},
+				Polyline2 = Input {
+					Value = Polyline {
+					},
+				},
+				JoinStyle = Input { Value = 2, },
+				MiterLimit = Input { Value = 4, },
+				CapStyle = Input { Value = 0, },
+				Polyline = Input {
+					Value = Polyline {
+						Closed = true,
+						Points = {
+							{ X = -0.126665035266882, Y = -0.124014729043221, LX = 0.0646073379844614, LY = 0.0707900871900353, RX = -0.0646073379844614, RY = -0.0707900871900353 },
+							{ X = -0.371823760391882, Y = -0.135209586781857, LX = 0.0707900871900353, LY = -0.0646073379844614, RX = -0.0707900871900358, RY = 0.0646073379844614 },
+							{ X = -0.383018618130519, Y = 0.109949138343143, LX = -0.0646073379844614, LY = -0.0707900871900362, RX = 0.0646073379844614, RY = 0.0707900871900362 },
+							{ X = -0.137859893005519, Y = 0.121143996081779, LX = -0.0707900871900358, LY = 0.0646073379844614, RX = 0.0707900871900353, RY = -0.0646073379844614 }
+						}
+					},
+				}
+			},
+			ViewInfo = OperatorInfo { Pos = { 2090, -247.5 } },
+		},
 		poly_1 = sPolygon {
 			DrawMode = "ModifyOnly",
 			NameSet = true,
@@ -69,49 +110,7 @@
 			},
 			ViewInfo = OperatorInfo { Pos = { 1980, -247.5 } },
 		},
-		grabber = sPolygon {
-			DrawMode = "ModifyOnly",
-			NameSet = true,
-			Inputs = {
-				MaskWidth = Input {
-					Value = Number {
-						Value = 320
-					},
-				},
-				PixelAspect = Input {
-					Value = Point {
-						X = 1,
-						Y = 1
-					},
-				},
-				MaskHeight = Input {
-					Value = Number {
-						Value = 240
-					},
-				},
-				Polyline2 = Input {
-					Value = Polyline {
-					},
-				},
-				JoinStyle = Input { Value = 2, },
-				MiterLimit = Input { Value = 4, },
-				CapStyle = Input { Value = 0, },
-				Polyline = Input {
-					Value = Polyline {
-						Closed = true,
-						Points = {
-							{ X = -0.126665035266882, Y = -0.124014729043221, LX = 0.0646073379844614, LY = 0.0707900871900353, RX = -0.0646073379844614, RY = -0.0707900871900353 },
-							{ X = -0.371823760391882, Y = -0.135209586781857, LX = 0.0707900871900353, LY = -0.0646073379844614, RX = -0.0707900871900358, RY = 0.0646073379844614 },
-							{ X = -0.383018618130519, Y = 0.109949138343143, LX = -0.0646073379844614, LY = -0.0707900871900362, RX = 0.0646073379844614, RY = 0.0707900871900362 },
-							{ X = -0.137859893005519, Y = 0.121143996081779, LX = -0.0707900871900358, LY = 0.0646073379844614, RX = 0.0707900871900353, RY = -0.0646073379844614 }
-						}
-					},
-				}
-			},
-			ViewInfo = OperatorInfo { Pos = { 2090, -247.5 } },
-		},
 		loop = sMerge {
-			CtrlWZoom = false,
 			NameSet = true,
 			Inputs = {
 				Input1 = Input {
