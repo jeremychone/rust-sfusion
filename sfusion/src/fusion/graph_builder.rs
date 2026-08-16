@@ -114,11 +114,13 @@ impl GraphBuilder {
 		let explicit_id = get_element_id(element);
 		let effective_style = element.style().inherit_from(parent_style);
 		let border_width = effective_style.stroke_width.map(|sw| {
-			let denom = if view_box.height == 0.0 { 1.0 } else { view_box.height };
+			let max_dim = view_box.width.max(view_box.height);
+			let denom = if max_dim == 0.0 { 1.0 } else { max_dim };
 			sw / denom
 		});
 		let (red, green, blue, opacity) = resolve_color_and_opacity(&effective_style);
 		let mut last_name = None;
+		let (mask_width, mask_height) = view_box.scaled_1080p_dimensions();
 
 		for poly in polylines {
 			let name = self.name_tracker.generate_unique_name(explicit_id);
@@ -126,8 +128,8 @@ impl GraphBuilder {
 
 			let spolygon = SPolygon {
 				name: name.clone(),
-				mask_width: 320.0,
-				mask_height: 240.0,
+				mask_width,
+				mask_height,
 				border_width,
 				red,
 				green,
@@ -347,6 +349,8 @@ mod tests {
 
 		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
 			assert_eq!(p1.name, "grabber");
+			assert_eq!(p1.mask_width, 1080.0);
+			assert_eq!(p1.mask_height, 810.0);
 			assert_eq!(p1.view_info.pos_x, 2090.0);
 			assert_eq!(p1.view_info.pos_y, -247.5);
 		} else {
@@ -355,6 +359,8 @@ mod tests {
 
 		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
 			assert_eq!(p2.name, "poly_1");
+			assert_eq!(p2.mask_width, 1080.0);
+			assert_eq!(p2.mask_height, 810.0);
 			assert_eq!(p2.view_info.pos_x, 1980.0);
 			assert_eq!(p2.view_info.pos_y, -247.5);
 		} else {
@@ -453,14 +459,14 @@ mod tests {
 		assert_eq!(fusion_doc.tools.len(), 3);
 		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
 			assert_eq!(p1.name, "inherited_path");
-			assert_eq!(p1.border_width, Some(4.0 / 100.0));
+			assert_eq!(p1.border_width, Some(4.0 / 200.0));
 		} else {
 			return Err("Expected inherited_path SPolygon".into());
 		}
 
 		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
 			assert_eq!(p2.name, "override_path");
-			assert_eq!(p2.border_width, Some(10.0 / 100.0));
+			assert_eq!(p2.border_width, Some(10.0 / 200.0));
 		} else {
 			return Err("Expected override_path SPolygon".into());
 		}
@@ -525,14 +531,14 @@ mod tests {
 		assert_eq!(fusion_doc.tools.len(), 3);
 		if let FusionTool::SPolygon(p1) = &fusion_doc.tools[0] {
 			assert_eq!(p1.name, "rect1");
-			assert_eq!(p1.border_width, Some(8.0 / 200.0));
+			assert_eq!(p1.border_width, Some(8.0 / 400.0));
 		} else {
 			return Err("Expected rect1 SPolygon".into());
 		}
 
 		if let FusionTool::SPolygon(p2) = &fusion_doc.tools[1] {
 			assert_eq!(p2.name, "rect2");
-			assert_eq!(p2.border_width, Some(2.0 / 200.0));
+			assert_eq!(p2.border_width, Some(2.0 / 400.0));
 		} else {
 			return Err("Expected rect2 SPolygon".into());
 		}

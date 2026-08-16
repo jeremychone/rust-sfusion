@@ -15,8 +15,8 @@ fn test_sfusion_svg_to_sfusion_simple_path() -> Result<()> {
 	// -- Check
 	assert!(fusion_script.starts_with("{\n\tTools = ordered() {\n"));
 	assert!(fusion_script.contains("poly_1 = sPolygon {"));
-	assert!(fusion_script.contains("Value = 320"));
-	assert!(fusion_script.contains("Value = 240"));
+	assert!(fusion_script.contains("Value = 1080"));
+	assert!(fusion_script.contains("Value = 810"));
 	assert!(fusion_script.contains("Closed = true,"));
 	assert!(fusion_script.ends_with("\t}\n}\n"));
 

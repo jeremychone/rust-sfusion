@@ -96,6 +96,8 @@ pub struct SvgDefs {
 	pub gradients: HashMap<String, SvgGradient>,
 }
 
+pub const MAX_1080P_DIMENSION: f64 = 1080.0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform2D {
 	pub a: f64,
@@ -383,6 +385,20 @@ impl SvgViewBox {
 			height,
 		}
 	}
+
+	pub fn scaled_dimensions_to_max(&self, max_dimension: f64) -> (f64, f64) {
+		let max_dim = self.width.max(self.height);
+		if max_dim <= 0.0 {
+			(max_dimension, max_dimension)
+		} else {
+			let scale = max_dimension / max_dim;
+			(self.width * scale, self.height * scale)
+		}
+	}
+
+	pub fn scaled_1080p_dimensions(&self) -> (f64, f64) {
+		self.scaled_dimensions_to_max(MAX_1080P_DIMENSION)
+	}
 }
 
 // endregion: --- Constructors
@@ -421,6 +437,36 @@ mod tests {
 		assert_eq!(combined.fill_opacity, Some(0.8));
 		assert_eq!(combined.stroke, Some(SvgPaint::Color(SvgColor::new_rgb(0, 0, 255))));
 		assert_eq!(combined.stroke_linecap, Some(StrokeLinecap::Round));
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_ast_svg_view_box_1080p_scaling() -> Result<()> {
+		// -- Setup & Fixtures
+		let landscape = SvgViewBox::new(0.0, 0.0, 1920.0, 1080.0);
+		let portrait = SvgViewBox::new(0.0, 0.0, 600.0, 1200.0);
+		let square = SvgViewBox::new(0.0, 0.0, 200.0, 200.0);
+		let zero = SvgViewBox::new(0.0, 0.0, 0.0, 0.0);
+
+		// -- Exec
+		let (land_w, land_h) = landscape.scaled_1080p_dimensions();
+		let (port_w, port_h) = portrait.scaled_1080p_dimensions();
+		let (sq_w, sq_h) = square.scaled_1080p_dimensions();
+		let (z_w, z_h) = zero.scaled_1080p_dimensions();
+
+		// -- Check
+		assert_eq!(land_w, 1080.0);
+		assert_eq!(land_h, 607.5);
+
+		assert_eq!(port_w, 540.0);
+		assert_eq!(port_h, 1080.0);
+
+		assert_eq!(sq_w, 1080.0);
+		assert_eq!(sq_h, 1080.0);
+
+		assert_eq!(z_w, 1080.0);
+		assert_eq!(z_h, 1080.0);
 
 		Ok(())
 	}

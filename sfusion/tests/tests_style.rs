@@ -35,7 +35,7 @@ fn test_style_svg_presentation_and_css_override() -> Result<()> {
 	}
 
 	assert!(fusion_script.contains("styled_rect = sPolygon {"));
-	assert!(fusion_script.contains("BorderWidth = Input { Value = 0.02, },"));
+	assert!(fusion_script.contains("BorderWidth = Input { Value = 0.015, },"));
 
 	Ok(())
 }

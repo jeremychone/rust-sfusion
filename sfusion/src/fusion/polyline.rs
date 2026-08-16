@@ -20,6 +20,7 @@ pub struct PolylineData {
 pub fn transform_point_with_aspect(pt: Point, view_box: &SvgViewBox, target_aspect: f64) -> Point {
 	let width = if view_box.width == 0.0 { 1.0 } else { view_box.width };
 	let height = if view_box.height == 0.0 { 1.0 } else { view_box.height };
+	let max_dim = width.max(height);
 	let aspect = if target_aspect == 0.0 { 1.0 } else { target_aspect };
 
 	let center_x = view_box.min_x + width / 2.0;
@@ -28,8 +29,8 @@ pub fn transform_point_with_aspect(pt: Point, view_box: &SvgViewBox, target_aspe
 	let rel_x = pt.x - center_x;
 	let rel_y = pt.y - center_y;
 
-	let nx = rel_x / (height * aspect);
-	let ny = -rel_y / height;
+	let nx = rel_x / (max_dim * aspect);
+	let ny = -rel_y / max_dim;
 
 	Point::new(nx, ny)
 }
@@ -41,11 +42,13 @@ pub fn transform_point(pt: Point, view_box: &SvgViewBox) -> Point {
 
 /// Transform an SVG vector delta into Fusion normalized delta with aspect ratio compensation.
 pub fn transform_vector_with_aspect(dx: f64, dy: f64, view_box: &SvgViewBox, target_aspect: f64) -> (f64, f64) {
+	let width = if view_box.width == 0.0 { 1.0 } else { view_box.width };
 	let height = if view_box.height == 0.0 { 1.0 } else { view_box.height };
+	let max_dim = width.max(height);
 	let aspect = if target_aspect == 0.0 { 1.0 } else { target_aspect };
 
-	let ndx = dx / (height * aspect);
-	let ndy = -dy / height;
+	let ndx = dx / (max_dim * aspect);
+	let ndy = -dy / max_dim;
 
 	(ndx, ndy)
 }
