@@ -93,7 +93,6 @@ fn serialize_point(out: &mut String, pt: &PolylinePoint, trailing_comma: &str) {
 fn serialize_smerge(out: &mut String, merge: &SMerge, is_last: bool) {
 	let trailing_comma = if is_last { "" } else { "," };
 	let _ = writeln!(out, "\t\t{} = sMerge {{", merge.name);
-	out.push_str("\t\t\tCtrlWZoom = false,\n");
 	out.push_str("\t\t\tNameSet = true,\n");
 	out.push_str("\t\t\tInputs = {\n");
 

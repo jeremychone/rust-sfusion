@@ -31,8 +31,10 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 					}
 					b"g" => {
 						let id = get_attribute_str(e, b"id")?;
+						let transform = get_attribute_transform(e)?;
 						group_stack.push(SvgGroup {
 							id,
+							transform,
 							children: Vec::new(),
 						});
 					}
@@ -106,11 +108,12 @@ fn parse_svg_attributes(e: &quick_xml::events::BytesStart<'_>, doc: &mut SvgDoc)
 fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElement>> {
 	let local_name = e.local_name();
 	let id = get_attribute_str(e, b"id")?;
+	let transform = get_attribute_transform(e)?;
 
 	match local_name.as_ref() {
 		b"path" => {
 			let d = get_attribute_str(e, b"d")?.unwrap_or_default();
-			Ok(Some(SvgElement::Path(SvgPath { id, d })))
+			Ok(Some(SvgElement::Path(SvgPath { id, transform, d })))
 		}
 		b"rect" => {
 			let x = get_attribute_f64(e, b"x")?.unwrap_or(0.0);
@@ -121,6 +124,7 @@ fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElem
 			let ry = get_attribute_f64(e, b"ry")?;
 			Ok(Some(SvgElement::Rect(SvgRect {
 				id,
+				transform,
 				x,
 				y,
 				width,
@@ -133,31 +137,31 @@ fn parse_element(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<SvgElem
 			let cx = get_attribute_f64(e, b"cx")?.unwrap_or(0.0);
 			let cy = get_attribute_f64(e, b"cy")?.unwrap_or(0.0);
 			let r = get_attribute_f64(e, b"r")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Circle(SvgCircle { id, cx, cy, r })))
+			Ok(Some(SvgElement::Circle(SvgCircle { id, transform, cx, cy, r })))
 		}
 		b"ellipse" => {
 			let cx = get_attribute_f64(e, b"cx")?.unwrap_or(0.0);
 			let cy = get_attribute_f64(e, b"cy")?.unwrap_or(0.0);
 			let rx = get_attribute_f64(e, b"rx")?.unwrap_or(0.0);
 			let ry = get_attribute_f64(e, b"ry")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Ellipse(SvgEllipse { id, cx, cy, rx, ry })))
+			Ok(Some(SvgElement::Ellipse(SvgEllipse { id, transform, cx, cy, rx, ry })))
 		}
 		b"line" => {
 			let x1 = get_attribute_f64(e, b"x1")?.unwrap_or(0.0);
 			let y1 = get_attribute_f64(e, b"y1")?.unwrap_or(0.0);
 			let x2 = get_attribute_f64(e, b"x2")?.unwrap_or(0.0);
 			let y2 = get_attribute_f64(e, b"y2")?.unwrap_or(0.0);
-			Ok(Some(SvgElement::Line(SvgLine { id, x1, y1, x2, y2 })))
+			Ok(Some(SvgElement::Line(SvgLine { id, transform, x1, y1, x2, y2 })))
 		}
 		b"polyline" => {
 			let points_str = get_attribute_str(e, b"points")?.unwrap_or_default();
 			let points = parse_points_list(&points_str);
-			Ok(Some(SvgElement::Polyline(SvgPolyline { id, points })))
+			Ok(Some(SvgElement::Polyline(SvgPolyline { id, transform, points })))
 		}
 		b"polygon" => {
 			let points_str = get_attribute_str(e, b"points")?.unwrap_or_default();
 			let points = parse_points_list(&points_str);
-			Ok(Some(SvgElement::Polygon(SvgPolygon { id, points })))
+			Ok(Some(SvgElement::Polygon(SvgPolygon { id, transform, points })))
 		}
 		_ => Ok(None),
 	}
@@ -182,6 +186,14 @@ fn get_attribute_f64(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Resul
 		return Ok(Some(num));
 	}
 	Ok(None)
+}
+
+fn get_attribute_transform(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<Transform2D>> {
+	if let Some(t_str) = get_attribute_str(e, b"transform")? {
+		Ok(parse_transform(&t_str))
+	} else {
+		Ok(None)
+	}
 }
 
 fn parse_view_box(s: &str) -> Option<SvgViewBox> {
@@ -212,6 +224,96 @@ fn parse_points_list(s: &str) -> Vec<(f64, f64)> {
 		.collect();
 
 	nums.chunks_exact(2).map(|chunk| (chunk[0], chunk[1])).collect()
+}
+
+pub fn parse_transform(s: &str) -> Option<Transform2D> {
+	let s = s.trim();
+	if s.is_empty() {
+		return None;
+	}
+
+	let mut current = Transform2D::identity();
+	let mut has_transform = false;
+	let mut rest = s;
+
+	while let Some(open_paren) = rest.find('(') {
+		let func_name = rest[..open_paren].trim().trim_start_matches(|c: char| c == ',' || c.is_whitespace());
+		let after_open = &rest[open_paren + 1..];
+		let close_paren = match after_open.find(')') {
+			Some(idx) => idx,
+			None => break,
+		};
+		let args_str = &after_open[..close_paren];
+		rest = &after_open[close_paren + 1..];
+
+		let nums: Vec<f64> = args_str
+			.split(|c: char| c.is_whitespace() || c == ',')
+			.filter(|item| !item.is_empty())
+			.filter_map(|item| item.parse::<f64>().ok())
+			.collect();
+
+		let tf = match func_name {
+			"matrix" if nums.len() >= 6 => Some(Transform2D {
+				a: nums[0],
+				b: nums[1],
+				c: nums[2],
+				d: nums[3],
+				e: nums[4],
+				f: nums[5],
+			}),
+			"translate" if !nums.is_empty() => {
+				let tx = nums[0];
+				let ty = nums.get(1).copied().unwrap_or(0.0);
+				Some(Transform2D {
+					a: 1.0,
+					b: 0.0,
+					c: 0.0,
+					d: 1.0,
+					e: tx,
+					f: ty,
+				})
+			}
+			"scale" if !nums.is_empty() => {
+				let sx = nums[0];
+				let sy = nums.get(1).copied().unwrap_or(sx);
+				Some(Transform2D {
+					a: sx,
+					b: 0.0,
+					c: 0.0,
+					d: sy,
+					e: 0.0,
+					f: 0.0,
+				})
+			}
+			"rotate" if !nums.is_empty() => {
+				let rad = nums[0].to_radians();
+				let cos = rad.cos();
+				let sin = rad.sin();
+				if nums.len() >= 3 {
+					let cx = nums[1];
+					let cy = nums[2];
+					let t1 = Transform2D { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: cx, f: cy };
+					let r = Transform2D { a: cos, b: sin, c: -sin, d: cos, e: 0.0, f: 0.0 };
+					let t2 = Transform2D { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: -cx, f: -cy };
+					Some(t1.multiply(&r).multiply(&t2))
+				} else {
+					Some(Transform2D { a: cos, b: sin, c: -sin, d: cos, e: 0.0, f: 0.0 })
+				}
+			}
+			_ => None,
+		};
+
+		if let Some(matrix) = tf {
+			current = current.multiply(&matrix);
+			has_transform = true;
+		}
+	}
+
+	if has_transform {
+		Some(current)
+	} else {
+		None
+	}
 }
 
 // endregion: --- Support

@@ -1,5 +1,52 @@
 // region:    --- Types
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Transform2D {
+	pub a: f64,
+	pub b: f64,
+	pub c: f64,
+	pub d: f64,
+	pub e: f64,
+	pub f: f64,
+}
+
+impl Default for Transform2D {
+	fn default() -> Self {
+		Self::identity()
+	}
+}
+
+impl Transform2D {
+	pub fn identity() -> Self {
+		Self {
+			a: 1.0,
+			b: 0.0,
+			c: 0.0,
+			d: 1.0,
+			e: 0.0,
+			f: 0.0,
+		}
+	}
+
+	pub fn multiply(&self, other: &Transform2D) -> Transform2D {
+		Transform2D {
+			a: self.a * other.a + self.c * other.b,
+			b: self.b * other.a + self.d * other.b,
+			c: self.a * other.c + self.c * other.d,
+			d: self.b * other.c + self.d * other.d,
+			e: self.a * other.e + self.c * other.f + self.e,
+			f: self.b * other.e + self.d * other.f + self.f,
+		}
+	}
+
+	pub fn transform_xy(&self, x: f64, y: f64) -> (f64, f64) {
+		(
+			self.a * x + self.c * y + self.e,
+			self.b * x + self.d * y + self.f,
+		)
+	}
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SvgDoc {
 	pub view_box: Option<SvgViewBox>,
@@ -31,12 +78,14 @@ pub enum SvgElement {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgPath {
 	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
 	pub d: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgRect {
 	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
 	pub x: f64,
 	pub y: f64,
 	pub width: f64,
@@ -48,6 +97,7 @@ pub struct SvgRect {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgCircle {
 	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
 	pub cx: f64,
 	pub cy: f64,
 	pub r: f64,
@@ -56,6 +106,7 @@ pub struct SvgCircle {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgEllipse {
 	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
 	pub cx: f64,
 	pub cy: f64,
 	pub rx: f64,
@@ -65,6 +116,7 @@ pub struct SvgEllipse {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgLine {
 	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
 	pub x1: f64,
 	pub y1: f64,
 	pub x2: f64,
@@ -74,18 +126,21 @@ pub struct SvgLine {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgPolyline {
 	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
 	pub points: Vec<(f64, f64)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgPolygon {
 	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
 	pub points: Vec<(f64, f64)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SvgGroup {
 	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
 	pub children: Vec<SvgElement>,
 }
 

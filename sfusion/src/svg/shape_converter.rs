@@ -85,6 +85,7 @@ pub fn rect_to_segments(rect: &SvgRect) -> Vec<NormalizedSegment> {
 pub fn circle_to_segments(circle: &SvgCircle) -> Vec<NormalizedSegment> {
 	ellipse_to_segments(&SvgEllipse {
 		id: circle.id.clone(),
+		transform: circle.transform,
 		cx: circle.cx,
 		cy: circle.cy,
 		rx: circle.r,
@@ -99,12 +100,7 @@ pub fn ellipse_to_segments(ellipse: &SvgEllipse) -> Vec<NormalizedSegment> {
 	let ry = ellipse.ry;
 
 	vec![
-		NormalizedSegment::MoveTo(Point::new(cx, cy - ry)),
-		NormalizedSegment::CubicTo {
-			p1: Point::new(cx + KAPPA * rx, cy - ry),
-			p2: Point::new(cx + rx, cy - KAPPA * ry),
-			p: Point::new(cx + rx, cy),
-		},
+		NormalizedSegment::MoveTo(Point::new(cx + rx, cy)),
 		NormalizedSegment::CubicTo {
 			p1: Point::new(cx + rx, cy + KAPPA * ry),
 			p2: Point::new(cx + KAPPA * rx, cy + ry),
@@ -119,6 +115,11 @@ pub fn ellipse_to_segments(ellipse: &SvgEllipse) -> Vec<NormalizedSegment> {
 			p1: Point::new(cx - rx, cy - KAPPA * ry),
 			p2: Point::new(cx - KAPPA * rx, cy - ry),
 			p: Point::new(cx, cy - ry),
+		},
+		NormalizedSegment::CubicTo {
+			p1: Point::new(cx + KAPPA * rx, cy - ry),
+			p2: Point::new(cx + rx, cy - KAPPA * ry),
+			p: Point::new(cx + rx, cy),
 		},
 		NormalizedSegment::Close,
 	]
@@ -183,6 +184,7 @@ mod tests {
 		// -- Setup & Fixtures
 		let rect = SvgRect {
 			id: None,
+			transform: None,
 			x: 10.0,
 			y: 20.0,
 			width: 100.0,
@@ -210,6 +212,7 @@ mod tests {
 		// -- Setup & Fixtures
 		let rect = SvgRect {
 			id: None,
+			transform: None,
 			x: 0.0,
 			y: 0.0,
 			width: 100.0,
@@ -236,6 +239,7 @@ mod tests {
 		// -- Setup & Fixtures
 		let circle = SvgCircle {
 			id: None,
+			transform: None,
 			cx: 50.0,
 			cy: 50.0,
 			r: 25.0,
@@ -246,7 +250,7 @@ mod tests {
 
 		// -- Check
 		assert_eq!(segments.len(), 6);
-		assert_eq!(segments[0], NormalizedSegment::MoveTo(Point::new(50.0, 25.0)));
+		assert_eq!(segments[0], NormalizedSegment::MoveTo(Point::new(75.0, 50.0)));
 		assert_eq!(segments[5], NormalizedSegment::Close);
 
 		Ok(())
@@ -257,6 +261,7 @@ mod tests {
 		// -- Setup & Fixtures
 		let line = SvgLine {
 			id: None,
+			transform: None,
 			x1: 10.0,
 			y1: 20.0,
 			x2: 30.0,
@@ -264,10 +269,12 @@ mod tests {
 		};
 		let polyline = SvgPolyline {
 			id: None,
+			transform: None,
 			points: vec![(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)],
 		};
 		let polygon = SvgPolygon {
 			id: None,
+			transform: None,
 			points: vec![(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)],
 		};
 
