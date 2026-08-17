@@ -23,8 +23,13 @@ pub struct GraphBuilder {
 
 // region:    --- Public Functions
 
-/// Converts an `SvgDoc` into a `FusionDoc` graph with positioned tools and merges.
+/// Converts an `SvgDoc` into a `FusionDoc` graph with positioned tools and merges using default options.
 pub fn build_fusion_doc(svg_doc: &SvgDoc) -> Result<FusionDoc> {
+	build_fusion_doc_with_options(svg_doc, &FusionOptions::default())
+}
+
+/// Converts an `SvgDoc` into a `FusionDoc` graph with positioned tools, merges, and optional transform end-node.
+pub fn build_fusion_doc_with_options(svg_doc: &SvgDoc, options: &FusionOptions) -> Result<FusionDoc> {
 	let mut builder = GraphBuilder::default();
 	let view_box = svg_doc.effective_view_box();
 
@@ -35,12 +40,52 @@ pub fn build_fusion_doc(svg_doc: &SvgDoc) -> Result<FusionDoc> {
 		top_output_names.extend(names);
 	}
 
+	let final_output_name = if top_output_names.len() > 1 {
+		let merge_name = builder.name_tracker.generate_unique_name(Some("smerge"));
+		let pos = builder.next_merge_pos();
+		let s_merge = SMerge {
+			name: merge_name.clone(),
+			inputs: top_output_names,
+			view_info: pos,
+		};
+		builder.tools.push(FusionTool::SMerge(s_merge));
+		Some(merge_name)
+	} else {
+		top_output_names.first().cloned()
+	};
+
+	if options.end_with_stransform
+		&& let Some(last_name) = final_output_name
+	{
+		let last_pos = builder
+			.tools
+			.iter()
+			.find_map(|tool| match tool {
+				FusionTool::SPolygon(p) if p.name == last_name => Some(p.view_info),
+				FusionTool::SText(t) if t.name == last_name => Some(t.view_info),
+				FusionTool::SMerge(m) if m.name == last_name => Some(m.view_info),
+				FusionTool::STransform(tf) if tf.name == last_name => Some(tf.view_info),
+				_ => None,
+			})
+			.unwrap_or_else(|| ViewInfo::new(DEFAULT_START_X, DEFAULT_START_Y));
+
+		let stransform_pos = ViewInfo::new(last_pos.pos_x + GRID_STEP_X, last_pos.pos_y + GRID_STEP_Y);
+		let stransform_name = builder.name_tracker.generate_unique_name(Some("sxf"));
+		let stransform = STransform {
+			name: stransform_name,
+			input_op: Some(last_name),
+			view_info: stransform_pos,
+		};
+		builder.tools.push(FusionTool::STransform(stransform));
+	}
+
 	// Sort sPolygon tools alphabetically, followed by sMerge tools
 	builder.tools.sort_by(|a, b| {
 		let rank = |t: &FusionTool| match t {
 			FusionTool::SPolygon(_) => 0,
 			FusionTool::SText(_) => 1,
 			FusionTool::SMerge(_) => 2,
+			FusionTool::STransform(_) => 3,
 		};
 		let r_a = rank(a);
 		let r_b = rank(b);
@@ -51,27 +96,17 @@ pub fn build_fusion_doc(svg_doc: &SvgDoc) -> Result<FusionDoc> {
 				FusionTool::SPolygon(p) => &p.name,
 				FusionTool::SText(t) => &t.name,
 				FusionTool::SMerge(m) => &m.name,
+				FusionTool::STransform(tf) => &tf.name,
 			};
 			let name_b = match b {
 				FusionTool::SPolygon(p) => &p.name,
 				FusionTool::SText(t) => &t.name,
 				FusionTool::SMerge(m) => &m.name,
+				FusionTool::STransform(tf) => &tf.name,
 			};
 			name_a.cmp(name_b)
 		}
 	});
-
-	// If there are multiple top-level elements without a containing group, merge them
-	if top_output_names.len() > 1 {
-		let merge_name = builder.name_tracker.generate_unique_name(Some("smerge"));
-		let pos = builder.next_merge_pos();
-		let s_merge = SMerge {
-			name: merge_name,
-			inputs: top_output_names,
-			view_info: pos,
-		};
-		builder.tools.push(FusionTool::SMerge(s_merge));
-	}
 
 	Ok(FusionDoc { tools: builder.tools })
 }
@@ -247,6 +282,9 @@ impl GraphBuilder {
 						FusionTool::SMerge(merge) if merge.name == child_name => {
 							merge.name = new_name.clone();
 						}
+						FusionTool::STransform(transform) if transform.name == child_name => {
+							transform.name = new_name.clone();
+						}
 						_ => {}
 					}
 					if let FusionTool::SMerge(merge) = tool {
@@ -255,6 +293,12 @@ impl GraphBuilder {
 								*input = new_name.clone();
 							}
 						}
+					}
+					if let FusionTool::STransform(tf) = tool
+						&& let Some(input_op) = &mut tf.input_op
+						&& *input_op == child_name
+					{
+						*input_op = new_name.clone();
 					}
 				}
 				child_name = new_name;
@@ -321,12 +365,7 @@ impl GraphBuilder {
 			.as_deref()
 			.or_else(|| effective_style.extra.as_ref().and_then(|m| m.get("text-anchor").map(|s| s.as_str())));
 
-		let (h_just, h_lcr) = match text_anchor.map(|a| a.trim().to_lowercase()).as_deref() {
-			Some("middle") | Some("center") => (Some(3), Some(1)),
-			Some("end") | Some("right") => (Some(2), Some(2)),
-			Some("start") | Some("left") => (Some(0), Some(0)),
-			_ => (Some(3), None),
-		};
+		let (h_just, h_lcr) = map_text_anchor(text_anchor);
 
 		let raw_x = text
 			.x
@@ -338,12 +377,7 @@ impl GraphBuilder {
 			.unwrap_or(0.0);
 
 		let (tx, ty) = total_tf.transform_xy(raw_x, raw_y);
-		let (cx, cy) = view_box.center();
-		let max_dim = view_box.width.max(view_box.height);
-		let denom = if max_dim == 0.0 { 1.0 } else { max_dim };
-
-		let center_x = (tx - cx) / denom;
-		let center_y = -(ty - cy) / denom;
+		let (center_x, center_y) = normalize_text_position(tx, ty, view_box);
 
 		let scale = (total_tf.a * total_tf.a + total_tf.b * total_tf.b).sqrt();
 		let font_size = text
@@ -355,11 +389,14 @@ impl GraphBuilder {
 					.and_then(|m| m.get("font-size"))
 					.and_then(|s| s.trim().trim_end_matches("px").trim_end_matches("pt").parse::<f64>().ok())
 			});
-		let size = font_size.map(|fs| (fs * scale) / denom);
+		let size = font_size.map(|fs| normalize_text_size(fs, scale, view_box));
+		let (mask_width, mask_height) = view_box.scaled_1080p_dimensions();
 
 		let stext = SText {
 			name: name.clone(),
 			styled_text,
+			mask_width: Some(mask_width),
+			mask_height: Some(mask_height),
 			font,
 			style,
 			size,
@@ -383,6 +420,32 @@ impl GraphBuilder {
 		self.tools.push(FusionTool::SText(stext));
 		Ok(vec![name])
 	}
+}
+
+fn map_text_anchor(text_anchor: Option<&str>) -> (Option<i32>, Option<i32>) {
+	match text_anchor.map(|anchor| anchor.trim().to_lowercase()).as_deref() {
+		Some("middle") | Some("center") => (Some(3), Some(1)),
+		Some("end") | Some("right") => (Some(2), Some(2)),
+		Some("start") | Some("left") | None => (Some(0), Some(0)),
+		_ => (Some(0), Some(0)),
+	}
+}
+
+fn normalize_text_position(x: f64, y: f64, view_box: &SvgViewBox) -> (f64, f64) {
+	let (center_x, center_y) = view_box.center();
+	let max_dimension = view_box.width.max(view_box.height);
+	let denominator = if max_dimension == 0.0 { 1.0 } else { max_dimension };
+
+	(
+		0.5 + (x - center_x) / denominator,
+		0.5 - (y - center_y) / denominator,
+	)
+}
+
+fn normalize_text_size(font_size: f64, scale: f64, view_box: &SvgViewBox) -> f64 {
+	let max_dimension = view_box.width.max(view_box.height);
+	let denominator = if max_dimension == 0.0 { 1.0 } else { max_dimension };
+	(font_size * scale) / denominator
 }
 
 fn clean_font_family(raw_font: &str) -> Option<String> {
@@ -1447,9 +1510,11 @@ mod tests {
 			assert_eq!(txt.styled_text, "Hello World");
 			assert_eq!(txt.font.as_deref(), Some("Roboto"));
 			assert_eq!(txt.style.as_deref(), Some("Bold"));
+			assert_eq!(txt.mask_width, Some(1080.0));
+			assert_eq!(txt.mask_height, Some(810.0));
 			assert_eq!(txt.size, Some(24.0 / 400.0));
-			assert_eq!(txt.center_x, Some(-0.375));
-			assert_eq!(txt.center_y, Some(0.25));
+			assert_eq!(txt.center_x, Some(0.125));
+			assert_eq!(txt.center_y, Some(0.75));
 			assert_eq!(txt.red, Some(1.0));
 			assert!((txt.green.ok_or("missing green")? - 128.0 / 255.0).abs() < 1e-6);
 			assert_eq!(txt.blue, Some(0.0));
@@ -1525,8 +1590,8 @@ mod tests {
 			assert_eq!(txt.font.as_deref(), Some("Open Sans"));
 			assert_eq!(txt.style.as_deref(), Some("Bold Italic"));
 			assert_eq!(txt.size, Some(14.0 / 500.0));
-			assert_eq!(txt.center_x, Some(-0.48));
-			assert_eq!(txt.center_y, Some(0.46));
+			assert_eq!(txt.center_x, Some(0.020000000000000018));
+			assert_eq!(txt.center_y, Some(0.96));
 			assert_eq!(txt.horizontal_justification, Some(0));
 			assert_eq!(txt.horizontal_left_center_right, Some(0));
 		}
@@ -1535,6 +1600,26 @@ mod tests {
 			assert_eq!(m.name, "card_group");
 			assert_eq!(m.inputs, vec!["bg_box", "label"]);
 		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_text_mapping_rules() -> Result<()> {
+		// -- Setup & Fixtures
+		let view_box = SvgViewBox::new(10.0, 20.0, 400.0, 200.0);
+
+		// -- Exec
+		let center = normalize_text_position(110.0, 70.0, &view_box);
+		let size = normalize_text_size(20.0, 2.0, &view_box);
+
+		// -- Check
+		assert_eq!(center, (0.25, 0.625));
+		assert_eq!(size, 0.1);
+		assert_eq!(map_text_anchor(None), (Some(0), Some(0)));
+		assert_eq!(map_text_anchor(Some("start")), (Some(0), Some(0)));
+		assert_eq!(map_text_anchor(Some("middle")), (Some(3), Some(1)));
+		assert_eq!(map_text_anchor(Some("end")), (Some(2), Some(2)));
 
 		Ok(())
 	}
@@ -1644,11 +1729,70 @@ mod tests {
 			assert_eq!(txt.font.as_deref(), Some("Lato"));
 			assert_eq!(txt.style.as_deref(), Some("Bold"));
 			assert_eq!(txt.size, Some(32.0 / 500.0));
-			assert_eq!(txt.center_x, Some(-0.4));
-			assert_eq!(txt.center_y, Some(0.0));
+			assert_eq!(txt.center_x, Some(0.09999999999999998));
+			assert_eq!(txt.center_y, Some(0.5));
+			assert_eq!(txt.horizontal_justification, Some(0));
+			assert_eq!(txt.horizontal_left_center_right, Some(0));
 		} else {
 			return Err("Expected SText tool".into());
 		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_with_stransform_option() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 100.0, 100.0)),
+			width: Some(100.0),
+			height: Some(100.0),
+			defs: SvgDefs::default(),
+			elements: vec![
+				SvgElement::Rect(SvgRect {
+					id: Some("rect_1".to_string()),
+					transform: None,
+					style: SvgStyle::default(),
+					x: 0.0,
+					y: 0.0,
+					width: 10.0,
+					height: 10.0,
+					rx: None,
+					ry: None,
+				}),
+				SvgElement::Rect(SvgRect {
+					id: Some("rect_2".to_string()),
+					transform: None,
+					style: SvgStyle::default(),
+					x: 20.0,
+					y: 20.0,
+					width: 10.0,
+					height: 10.0,
+					rx: None,
+					ry: None,
+				}),
+			],
+		};
+		let options = FusionOptions::default().with_end_with_stransform(true);
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc_with_options(&svg_doc, &options)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 4);
+		let tf = fusion_doc
+			.tools
+			.iter()
+			.find_map(|t| match t {
+				FusionTool::STransform(tf) => Some(tf),
+				_ => None,
+			})
+			.ok_or("Expected STransform tool")?;
+
+		assert_eq!(tf.name, "sxf");
+		assert_eq!(tf.input_op.as_deref(), Some("smerge"));
+		assert_eq!(tf.view_info.pos_x, 2200.0);
+		assert_eq!(tf.view_info.pos_y, -115.5);
 
 		Ok(())
 	}

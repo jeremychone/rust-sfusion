@@ -7,6 +7,10 @@ use clap::{Args, Parser, Subcommand};
 	about = "Convert SVG files into DaVinci Resolve Fusion format"
 )]
 pub struct CliCmd {
+	/// Append a terminal sTransform (sxf) node to the Fusion graph
+	#[arg(long, global = true, alias = "xsf")]
+	pub sxf: bool,
+
 	#[command(subcommand)]
 	pub command: Option<CliSubCmd>,
 }
@@ -75,6 +79,55 @@ mod tests {
 		let cmd = CliCmd::try_parse_from(args)?;
 
 		// -- Check
+		assert!(matches!(cmd.command, Some(CliSubCmd::ClipSwap)));
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_cli_cmd_parse_sxf_flag() -> Result<()> {
+		// -- Setup & Fixtures
+		let args = ["sfusion", "--sxf"];
+
+		// -- Exec
+		let cmd = CliCmd::try_parse_from(args)?;
+
+		// -- Check
+		assert!(cmd.sxf);
+		assert!(cmd.command.is_none());
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_cli_cmd_parse_sxf_with_to_shape() -> Result<()> {
+		// -- Setup & Fixtures
+		let args = ["sfusion", "to-shape", "icons/star.svg", "--sxf"];
+
+		// -- Exec
+		let cmd = CliCmd::try_parse_from(args)?;
+
+		// -- Check
+		assert!(cmd.sxf);
+		if let Some(CliSubCmd::ToShape(to_shape_args)) = cmd.command {
+			assert_eq!(to_shape_args.file, "icons/star.svg");
+		} else {
+			return Err("Expected CliSubCmd::ToShape".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_cli_cmd_parse_xsf_alias() -> Result<()> {
+		// -- Setup & Fixtures
+		let args = ["sfusion", "clip-swap", "--xsf"];
+
+		// -- Exec
+		let cmd = CliCmd::try_parse_from(args)?;
+
+		// -- Check
+		assert!(cmd.sxf);
 		assert!(matches!(cmd.command, Some(CliSubCmd::ClipSwap)));
 
 		Ok(())

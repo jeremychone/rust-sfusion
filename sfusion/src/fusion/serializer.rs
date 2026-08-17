@@ -1,5 +1,5 @@
+use crate::ast::{FusionDoc, FusionTool, PolylinePoint, SMerge, SPolygon, SText, STransform, ViewInfo};
 use std::fmt::Write;
-use crate::ast::{FusionDoc, FusionTool, PolylinePoint, SMerge, SPolygon, SText, ViewInfo};
 
 // region:    --- Public Functions
 
@@ -15,6 +15,7 @@ pub fn serialize_fusion_doc(doc: &FusionDoc) -> String {
 			FusionTool::SPolygon(poly) => serialize_spolygon(&mut out, poly, is_last),
 			FusionTool::SMerge(merge) => serialize_smerge(&mut out, merge, is_last),
 			FusionTool::SText(text) => serialize_stext(&mut out, text, is_last),
+			FusionTool::STransform(transform) => serialize_stransform(&mut out, transform, is_last),
 		}
 	}
 
@@ -64,10 +65,7 @@ fn serialize_spolygon(out: &mut String, poly: &SPolygon, is_last: bool) {
 	out.push_str("\t\t\t\tPolyline2 = Input {\n\t\t\t\t\tValue = Polyline {\n\t\t\t\t\t},\n\t\t\t\t},\n");
 	if let Some(border_width) = poly.border_width {
 		let bw_str = format_f64(border_width);
-		let _ = writeln!(
-			out,
-			"\t\t\t\tBorderWidth = Input {{ Value = {bw_str}, }},"
-		);
+		let _ = writeln!(out, "\t\t\t\tBorderWidth = Input {{ Value = {bw_str}, }},");
 	}
 	out.push_str("\t\t\t\tJoinStyle = Input { Value = 2, },\n");
 	out.push_str("\t\t\t\tMiterLimit = Input { Value = 4, },\n");
@@ -98,6 +96,23 @@ fn serialize_stext(out: &mut String, text: &SText, is_last: bool) {
 	let _ = writeln!(out, "\t\t{} = sText {{", text.name);
 	out.push_str("\t\t\tNameSet = true,\n");
 	out.push_str("\t\t\tInputs = {\n");
+	if let Some(mask_width) = text.mask_width {
+		let val = format_f64(mask_width);
+		let _ = writeln!(
+			out,
+			"\t\t\t\tMaskWidth = Input {{\n\t\t\t\t\tValue = Number {{\n\t\t\t\t\t\tValue = {val}\n\t\t\t\t\t}},\n\t\t\t\t}},"
+		);
+	}
+	if text.mask_width.is_some() || text.mask_height.is_some() {
+		out.push_str("\t\t\t\tPixelAspect = Input {\n\t\t\t\t\tValue = Point {\n\t\t\t\t\t\tX = 1,\n\t\t\t\t\t\tY = 1\n\t\t\t\t\t},\n\t\t\t\t},\n");
+	}
+	if let Some(mask_height) = text.mask_height {
+		let val = format_f64(mask_height);
+		let _ = writeln!(
+			out,
+			"\t\t\t\tMaskHeight = Input {{\n\t\t\t\t\tValue = Number {{\n\t\t\t\t\t\tValue = {val}\n\t\t\t\t\t}},\n\t\t\t\t}},"
+		);
+	}
 	if let Some(wrap) = text.wrap {
 		let _ = writeln!(out, "\t\t\t\tWrap = Input {{ Value = {wrap}, }},");
 	}
@@ -108,10 +123,7 @@ fn serialize_stext(out: &mut String, text: &SText, is_last: bool) {
 		let _ = writeln!(out, "\t\t\t\tTransformRotation = Input {{ Value = {rot}, }},");
 	}
 	let escaped_text = escape_lua_string(&text.styled_text);
-	let _ = writeln!(
-		out,
-		"\t\t\t\tStyledText = Input {{ Value = \"{escaped_text}\", }},"
-	);
+	let _ = writeln!(out, "\t\t\t\tStyledText = Input {{ Value = \"{escaped_text}\", }},");
 	if let Some(font) = &text.font {
 		let _ = writeln!(out, "\t\t\t\tFont = Input {{ Value = \"{font}\", }},");
 	}
@@ -207,6 +219,22 @@ fn serialize_smerge(out: &mut String, merge: &SMerge, is_last: bool) {
 
 	out.push_str("\t\t\t},\n");
 	serialize_view_info(out, &merge.view_info, trailing_comma);
+}
+
+fn serialize_stransform(out: &mut String, tf: &STransform, is_last: bool) {
+	let trailing_comma = if is_last { "" } else { "," };
+	let _ = writeln!(out, "\t\t{} = sTransform {{", tf.name);
+	out.push_str("\t\t\tCtrlWZoom = false,\n");
+	out.push_str("\t\t\tInputs = {\n");
+	if let Some(input_op) = &tf.input_op {
+		let _ = writeln!(
+			out,
+			"\t\t\t\tInput = Input {{\n\t\t\t\t\tSourceOp = \"{input_op}\",\n\t\t\t\t\tSource = \"Output\",\n\t\t\t\t}},"
+		);
+	}
+	out.push_str("\t\t\t\tYSize = Input {\n\t\t\t\t\tExpression = \"XSize\",\n\t\t\t\t},\n");
+	out.push_str("\t\t\t},\n");
+	serialize_view_info(out, &tf.view_info, trailing_comma);
 }
 
 fn serialize_view_info(out: &mut String, view_info: &ViewInfo, trailing_comma: &str) {
@@ -326,6 +354,8 @@ mod tests {
 			tools: vec![FusionTool::SText(SText {
 				name: "sText1".to_string(),
 				styled_text: "Hello World".to_string(),
+				mask_width: Some(1005.3947368421053),
+				mask_height: Some(1080.0),
 				font: Some("Open Sans".to_string()),
 				style: Some("Bold".to_string()),
 				size: Some(0.05),
@@ -348,6 +378,10 @@ mod tests {
 
 		// -- Check
 		assert!(output.contains("sText1 = sText {"));
+		assert!(
+			output.contains("MaskWidth = Input {\n\t\t\t\t\tValue = Number {\n\t\t\t\t\t\tValue = 1005.3947368421053")
+		);
+		assert!(output.contains("MaskHeight = Input {\n\t\t\t\t\tValue = Number {\n\t\t\t\t\t\tValue = 1080"));
 		assert!(output.contains("StyledText = Input { Value = \"Hello World\", },"));
 		assert!(output.contains("Font = Input { Value = \"Open Sans\", },"));
 		assert!(output.contains("Style = Input { Value = \"Bold\", },"));
@@ -396,6 +430,39 @@ mod tests {
 		assert!(output.contains("Wrap = Input { Value = 1, },"));
 		assert!(output.contains("LayoutRotation = Input { Value = 1, },"));
 		assert!(output.contains("TransformRotation = Input { Value = 1, },"));
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_serializer_stransform() -> Result<()> {
+		// -- Setup & Fixtures
+		let doc = FusionDoc {
+			tools: vec![
+				FusionTool::SMerge(SMerge {
+					name: "smerge_1".to_string(),
+					inputs: vec!["poly_1".to_string()],
+					view_info: ViewInfo::new(2090.0, -181.5),
+				}),
+				FusionTool::STransform(STransform {
+					name: "sxf_1".to_string(),
+					input_op: Some("smerge_1".to_string()),
+					view_info: ViewInfo::new(2200.0, -115.5),
+				}),
+			],
+		};
+
+		// -- Exec
+		let output = serialize_fusion_doc(&doc);
+
+		// -- Check
+		assert!(output.contains("sxf_1 = sTransform {"));
+		assert!(output.contains("CtrlWZoom = false,"));
+		assert!(output.contains(
+			"Input = Input {\n\t\t\t\t\tSourceOp = \"smerge_1\",\n\t\t\t\t\tSource = \"Output\",\n\t\t\t\t},"
+		));
+		assert!(output.contains("YSize = Input {\n\t\t\t\t\tExpression = \"XSize\",\n\t\t\t\t},"));
+		assert!(output.contains("Pos = { 2200, -115.5 }"));
 
 		Ok(())
 	}

@@ -31,6 +31,25 @@ fn test_cli_to_shape_integration() -> Result<()> {
 }
 
 #[test]
+fn test_cli_to_shape_with_sxf_integration() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r#"<svg viewBox="0 0 100 100"><rect width="80" height="80"/></svg>"#;
+	let options = sfusion::FusionOptions::default().with_end_with_stransform(true);
+
+	// -- Exec
+	let fusion_content = sfusion::svg_to_sfusion_with_options(svg_content, &options)?;
+
+	// -- Check
+	assert!(fusion_content.contains("Tools = ordered() {"));
+	assert!(fusion_content.contains("sPolygon"));
+	assert!(fusion_content.contains("sTransform"));
+	assert!(fusion_content.contains("CtrlWZoom = false"));
+	assert!(fusion_content.contains("Source = \"Output\""));
+
+	Ok(())
+}
+
+#[test]
 fn test_cli_stdin_integration() -> Result<()> {
 	// -- Setup & Fixtures
 	let svg_content = r#"<svg viewBox="0 0 200 200"><rect x="20" y="20" width="160" height="160"/></svg>"#;

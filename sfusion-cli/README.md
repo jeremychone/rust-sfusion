@@ -15,10 +15,16 @@ cargo install --path sfusion-cli
 ```sh
 # Convert File to Shape Output
 sfusion to-shape path/to/icon.svg
+
+# Convert File to Shape Output and append terminal sTransform node
+sfusion to-shape path/to/icon.svg --sxf
 # Generate `path/to/icon.svg.fusion-shape.txt` alongside the source file:
 
 # Convert Clipboard Content
 sfusion clip-swap
+
+# Convert Clipboard Content and append terminal sTransform node
+sfusion clip-swap --sxf
 # Inspects clipboard for SVG content, converts it, and writes the Fusion node data back to the clipboard:
 
 ```
@@ -29,4 +35,5 @@ Pipes SVG content from standard input and outputs DaVinci Resolve Fusion node da
 
 ```sh
 cat input.svg | sfusion > output.txt
+cat input.svg | sfusion --sxf > output.txt
 ```

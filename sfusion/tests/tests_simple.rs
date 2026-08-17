@@ -167,3 +167,26 @@ fn test_sfusion_svg_to_sfusion_layer_ordering_z_index() -> Result<()> {
 
 	Ok(())
 }
+
+#[test]
+fn test_sfusion_svg_to_sfusion_with_stransform_option() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r#"
+		<svg viewBox="0 0 400 400">
+			<rect id="bg_rect" x="0" y="0" width="400" height="400"/>
+		</svg>
+	"#;
+	let options = sfusion::FusionOptions::default().with_end_with_stransform(true);
+
+	// -- Exec
+	let fusion_script = sfusion::svg_to_sfusion_with_options(svg_content, &options)?;
+
+	// -- Check
+	assert!(fusion_script.contains("bg_rect = sPolygon {"));
+	assert!(fusion_script.contains("sxf = sTransform {"));
+	assert!(fusion_script.contains("CtrlWZoom = false,"));
+	assert!(fusion_script.contains("SourceOp = \"bg_rect\""));
+	assert!(fusion_script.contains("Expression = \"XSize\""));
+
+	Ok(())
+}

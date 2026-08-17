@@ -2,11 +2,11 @@ use std::io::{self, Read, Write};
 
 use crate::Result;
 
-pub fn exec_stdin() -> Result<()> {
+pub fn exec_stdin(options: &sfusion::FusionOptions) -> Result<()> {
 	let mut buffer = String::new();
 	io::stdin().read_to_string(&mut buffer)?;
 
-	let fusion_content = sfusion::svg_to_sfusion(&buffer)?;
+	let fusion_content = sfusion::svg_to_sfusion_with_options(&buffer, options)?;
 
 	let mut stdout = io::stdout().lock();
 	stdout.write_all(fusion_content.as_bytes())?;
@@ -28,13 +28,15 @@ mod tests {
 	fn test_stdin_svg_to_fusion() -> Result<()> {
 		// -- Setup & Fixtures
 		let svg_data = r#"<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>"#;
+		let options = sfusion::FusionOptions::default().with_end_with_stransform(true);
 
 		// -- Exec
-		let fusion_content = sfusion::svg_to_sfusion(svg_data)?;
+		let fusion_content = sfusion::svg_to_sfusion_with_options(svg_data, &options)?;
 
 		// -- Check
 		assert!(fusion_content.contains("Tools = ordered() {"));
 		assert!(fusion_content.contains("sPolygon {"));
+		assert!(fusion_content.contains("sTransform"));
 
 		Ok(())
 	}

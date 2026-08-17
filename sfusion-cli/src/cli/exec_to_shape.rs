@@ -18,7 +18,7 @@ pub fn compute_output_path(input_path: &Path) -> Result<PathBuf> {
 	Ok(output_path)
 }
 
-pub fn exec_to_shape(args: ToShapeArgs) -> Result<()> {
+pub fn exec_to_shape(args: ToShapeArgs, options: &sfusion::FusionOptions) -> Result<()> {
 	let input_path = Path::new(&args.file);
 	if !input_path.exists() {
 		return Err(Error::custom(format!("Input file not found: {}", input_path.display())));
@@ -26,7 +26,7 @@ pub fn exec_to_shape(args: ToShapeArgs) -> Result<()> {
 
 	let output_path = compute_output_path(input_path)?;
 	let svg_content = fs::read_to_string(input_path)?;
-	let fusion_content = sfusion::svg_to_sfusion(&svg_content)?;
+	let fusion_content = sfusion::svg_to_sfusion_with_options(&svg_content, options)?;
 
 	fs::write(&output_path, &fusion_content)?;
 	println!("Output written to: {}", output_path.display());
@@ -72,9 +72,10 @@ mod tests {
 		let args = ToShapeArgs {
 			file: input_path.to_string_lossy().to_string(),
 		};
+		let options = sfusion::FusionOptions::default().with_end_with_stransform(true);
 
 		// -- Exec
-		exec_to_shape(args)?;
+		exec_to_shape(args, &options)?;
 
 		// -- Check
 		let expected_output_path = tmp_dir.join("sample_icon.svg.fusion-shape.txt");
@@ -83,6 +84,7 @@ mod tests {
 		let content = fs::read_to_string(&expected_output_path)?;
 		assert!(content.contains("Tools = ordered() {"));
 		assert!(content.contains("sPolygon {"));
+		assert!(content.contains("sTransform"));
 
 		// fs::remove_dir_all(&tmp_dir)?; // Cleanup manually if needed
 

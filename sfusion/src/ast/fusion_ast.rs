@@ -1,6 +1,11 @@
 // region:    --- Types
 
 #[derive(Debug, Clone, PartialEq, Default)]
+pub struct FusionOptions {
+	pub end_with_stransform: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct FusionDoc {
 	pub tools: Vec<FusionTool>,
 }
@@ -10,6 +15,7 @@ pub enum FusionTool {
 	SPolygon(SPolygon),
 	SMerge(SMerge),
 	SText(SText),
+	STransform(STransform),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +44,8 @@ pub struct SMerge {
 pub struct SText {
 	pub name: String,
 	pub styled_text: String,
+	pub mask_width: Option<f64>,
+	pub mask_height: Option<f64>,
 	pub font: Option<String>,
 	pub style: Option<String>,
 	pub size: Option<f64>,
@@ -55,6 +63,13 @@ pub struct SText {
 	pub transform_rotation: Option<i32>,
 	pub center_x: Option<f64>,
 	pub center_y: Option<f64>,
+	pub view_info: ViewInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct STransform {
+	pub name: String,
+	pub input_op: Option<String>,
 	pub view_info: ViewInfo,
 }
 
@@ -78,6 +93,13 @@ pub struct ViewInfo {
 // endregion: --- Types
 
 // region:    --- Constructors
+
+impl FusionOptions {
+	pub fn with_end_with_stransform(mut self, end_with_stransform: bool) -> Self {
+		self.end_with_stransform = end_with_stransform;
+		self
+	}
+}
 
 impl PolylinePoint {
 	pub fn new_linear(x: f64, y: f64) -> Self {
@@ -121,6 +143,26 @@ impl SText {
 	}
 }
 
+impl STransform {
+	pub fn new(name: impl Into<String>) -> Self {
+		Self {
+			name: name.into(),
+			input_op: None,
+			view_info: ViewInfo::default(),
+		}
+	}
+
+	pub fn with_input_op(mut self, input_op: impl Into<String>) -> Self {
+		self.input_op = Some(input_op.into());
+		self
+	}
+
+	pub fn with_view_info(mut self, view_info: ViewInfo) -> Self {
+		self.view_info = view_info;
+		self
+	}
+}
+
 // endregion: --- Constructors
 
 // region:    --- Froms
@@ -143,6 +185,12 @@ impl From<SText> for FusionTool {
 	}
 }
 
+impl From<STransform> for FusionTool {
+	fn from(val: STransform) -> Self {
+		Self::STransform(val)
+	}
+}
+
 // endregion: --- Froms
 
 // region:    --- Tests
@@ -159,6 +207,8 @@ mod tests {
 		let text_tool = SText {
 			name: "sText1".to_string(),
 			styled_text: "Hello Fusion".to_string(),
+			mask_width: Some(1005.3947368421053),
+			mask_height: Some(1080.0),
 			font: Some("Open Sans".to_string()),
 			style: Some("Bold".to_string()),
 			size: Some(0.05),
@@ -173,6 +223,33 @@ mod tests {
 
 		// -- Check
 		assert_eq!(tool, FusionTool::SText(text_tool));
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_ast_fusion_options_builder() -> Result<()> {
+		// -- Setup & Fixtures
+		let options = FusionOptions::default().with_end_with_stransform(true);
+
+		// -- Check
+		assert!(options.end_with_stransform);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_ast_fusion_stransform_creation() -> Result<()> {
+		// -- Setup & Fixtures
+		let transform = STransform::new("sxf_1")
+			.with_input_op("smerge")
+			.with_view_info(ViewInfo::new(100.0, 200.0));
+
+		// -- Exec
+		let tool: FusionTool = transform.clone().into();
+
+		// -- Check
+		assert_eq!(tool, FusionTool::STransform(transform));
 
 		Ok(())
 	}

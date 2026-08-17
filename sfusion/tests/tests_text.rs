@@ -22,10 +22,14 @@ fn test_text_standalone_simple() -> Result<()> {
 	assert!(fusion_script.contains("Red1 = Input { Value = 1, },"));
 	assert!(fusion_script.contains("Green1 = Input { Value = 0, },"));
 	assert!(fusion_script.contains("Blue1 = Input { Value = 0, },"));
+	assert!(fusion_script.contains("MaskWidth = Input {\n\t\t\t\t\tValue = Number {\n\t\t\t\t\t\tValue = 1080"));
+	assert!(fusion_script.contains("MaskHeight = Input {\n\t\t\t\t\tValue = Number {\n\t\t\t\t\t\tValue = 540"));
 	assert!(fusion_script.contains("Size = Input { Value = 0.07, },"));
-	assert!(fusion_script.contains("X = -0.45,"));
-	assert!(fusion_script.contains("Y = 0.125,"));
+	assert!(fusion_script.contains("X = 0.04999999999999999,"));
+	assert!(fusion_script.contains("Y = 0.625,"));
 	assert!(fusion_script.contains("VerticalJustificationNew = Input { Value = 3, },"));
+	assert!(fusion_script.contains("HorizontalJustificationNew = Input { Value = 0, },"));
+	assert!(fusion_script.contains("HorizontalLeftCenterRight = Input { Value = 0, },"));
 
 	Ok(())
 }
@@ -181,8 +185,8 @@ fn test_text_sizing_and_positioning_with_transforms() -> Result<()> {
 	assert!(fusion_script.contains("transformed_txt = sText {"));
 	assert!(fusion_script.contains("StyledText = Input { Value = \"Scaled Text\", },"));
 	assert!(fusion_script.contains("Size = Input { Value = 0.04, },"));
-	assert!(fusion_script.contains("X = -0.3,"));
-	assert!(fusion_script.contains("Y = 0.15,"));
+	assert!(fusion_script.contains("X = 0.2,"));
+	assert!(fusion_script.contains("Y = 0.65,"));
 
 	Ok(())
 }
@@ -212,8 +216,8 @@ fn test_text_matrix_transform_hierarchy() -> Result<()> {
 	assert!(fusion_script.contains("matrix_txt = sText {"));
 	assert!(fusion_script.contains("StyledText = Input { Value = \"Matrix Text\", },"));
 	assert!(fusion_script.contains("Size = Input { Value = 0.05, },"));
-	assert!(fusion_script.contains("X = -0.125,"));
-	assert!(fusion_script.contains("Y = 0.125,"));
+	assert!(fusion_script.contains("X = 0.375,"));
+	assert!(fusion_script.contains("Y = 0.625,"));
 
 	Ok(())
 }
