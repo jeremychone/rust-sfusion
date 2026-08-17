@@ -118,6 +118,10 @@ fn serialize_stext(out: &mut String, text: &SText, is_last: bool) {
 	if let Some(style) = &text.style {
 		let _ = writeln!(out, "\t\t\t\tStyle = Input {{ Value = \"{style}\", }},");
 	}
+	if let Some(size) = text.size {
+		let val = format_f64(size);
+		let _ = writeln!(out, "\t\t\t\tSize = Input {{ Value = {val}, }},");
+	}
 	if let Some(ls) = text.line_spacing {
 		let val = format_f64(ls);
 		let _ = writeln!(out, "\t\t\t\tLineSpacing = Input {{ Value = {val}, }},");
@@ -156,7 +160,7 @@ fn serialize_stext(out: &mut String, text: &SText, is_last: bool) {
 		let y_str = format_f64(cy);
 		let _ = writeln!(
 			out,
-			"\t\t\t\tCenter = Input {{\n\t\t\t\t\tValue = Point {{\n\t\t\t\t\t\tX = {x_str},\n\t\t\t\t\t\tY = {y_str}\n\t\t\t\t\t}},\n\t\t\t\t}},"
+			"\t\t\t\tCenter = Input {{\n\t\t\t\t\tValue = Point {{\n\t\t\t\t\t\tX = {x_str},\n\t\t\t\t\t\tY = {y_str},\n\t\t\t\t\t}},\n\t\t\t\t}},"
 		);
 	}
 	out.push_str("\t\t\t},\n");
@@ -324,6 +328,7 @@ mod tests {
 				styled_text: "Hello World".to_string(),
 				font: Some("Open Sans".to_string()),
 				style: Some("Bold".to_string()),
+				size: Some(0.05),
 				red: Some(1.0),
 				green: Some(0.5),
 				blue: Some(0.0),
@@ -346,6 +351,7 @@ mod tests {
 		assert!(output.contains("StyledText = Input { Value = \"Hello World\", },"));
 		assert!(output.contains("Font = Input { Value = \"Open Sans\", },"));
 		assert!(output.contains("Style = Input { Value = \"Bold\", },"));
+		assert!(output.contains("Size = Input { Value = 0.05, },"));
 		assert!(output.contains("Red1 = Input { Value = 1, },"));
 		assert!(output.contains("Green1 = Input { Value = 0.5, },"));
 		assert!(output.contains("Blue1 = Input { Value = 0, },"));

@@ -22,6 +22,9 @@ fn test_text_standalone_simple() -> Result<()> {
 	assert!(fusion_script.contains("Red1 = Input { Value = 1, },"));
 	assert!(fusion_script.contains("Green1 = Input { Value = 0, },"));
 	assert!(fusion_script.contains("Blue1 = Input { Value = 0, },"));
+	assert!(fusion_script.contains("Size = Input { Value = 0.07, },"));
+	assert!(fusion_script.contains("X = -0.45,"));
+	assert!(fusion_script.contains("Y = 0.125,"));
 	assert!(fusion_script.contains("VerticalJustificationNew = Input { Value = 3, },"));
 
 	Ok(())
@@ -148,6 +151,69 @@ fn test_text_nested_tspan_inline_flattening() -> Result<()> {
 	assert!(fusion_script.contains("StyledText = Input { Value = \"RUST\", },"));
 	assert!(fusion_script.contains("Font = Input { Value = \"Lato\", },"));
 	assert!(fusion_script.contains("Style = Input { Value = \"Bold\", },"));
+
+	Ok(())
+}
+
+#[test]
+fn test_text_sizing_and_positioning_with_transforms() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r##"
+		<svg viewBox="0 0 1000 500">
+			<g transform="translate(100, 50) scale(2, 2)">
+				<text id="transformed_txt" x="50" y="25" font-family="Roboto" font-size="20" fill="#ffffff">
+					Scaled Text
+				</text>
+			</g>
+		</svg>
+	"##;
+
+	// -- Exec
+	let fusion_script = sfusion::svg_to_sfusion(svg_content)?;
+
+	// -- Check
+	// ViewBox: 1000x500. Center = (500, 250), MaxDim = 1000.
+	// Transform: x' = 100 + 50 * 2 = 200, y' = 50 + 25 * 2 = 100.
+	// Center X = (200 - 500) / 1000 = -0.3
+	// Center Y = -(100 - 250) / 1000 = 0.15
+	// Scale = 2.0. Effective font size = 20 * 2 = 40.
+	// Size = 40 / 1000 = 0.04
+	assert!(fusion_script.contains("transformed_txt = sText {"));
+	assert!(fusion_script.contains("StyledText = Input { Value = \"Scaled Text\", },"));
+	assert!(fusion_script.contains("Size = Input { Value = 0.04, },"));
+	assert!(fusion_script.contains("X = -0.3,"));
+	assert!(fusion_script.contains("Y = 0.15,"));
+
+	Ok(())
+}
+
+#[test]
+fn test_text_matrix_transform_hierarchy() -> Result<()> {
+	// -- Setup & Fixtures
+	let svg_content = r##"
+		<svg viewBox="0 0 800 600">
+			<g transform="matrix(1 0 0 1 200 100)">
+				<text id="matrix_txt" x="100" y="100" font-family="Arial" font-size="40">
+					Matrix Text
+				</text>
+			</g>
+		</svg>
+	"##;
+
+	// -- Exec
+	let fusion_script = sfusion::svg_to_sfusion(svg_content)?;
+
+	// -- Check
+	// ViewBox: 800x600. Center = (400, 300), MaxDim = 800.
+	// Transform: x' = 200 + 100 = 300, y' = 100 + 100 = 200.
+	// Center X = (300 - 400) / 800 = -0.125
+	// Center Y = -(200 - 300) / 800 = 0.125
+	// Scale = 1.0. Size = 40 / 800 = 0.05
+	assert!(fusion_script.contains("matrix_txt = sText {"));
+	assert!(fusion_script.contains("StyledText = Input { Value = \"Matrix Text\", },"));
+	assert!(fusion_script.contains("Size = Input { Value = 0.05, },"));
+	assert!(fusion_script.contains("X = -0.125,"));
+	assert!(fusion_script.contains("Y = 0.125,"));
 
 	Ok(())
 }

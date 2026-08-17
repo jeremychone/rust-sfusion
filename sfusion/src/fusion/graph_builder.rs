@@ -279,12 +279,12 @@ impl GraphBuilder {
 	fn process_text(
 		&mut self,
 		text: &SvgText,
-		_view_box: &SvgViewBox,
+		view_box: &SvgViewBox,
 		parent_tf: Transform2D,
 		parent_style: &SvgStyle,
 	) -> Result<Vec<String>> {
 		let elem_tf = text.transform.unwrap_or_default();
-		let _total_tf = parent_tf.multiply(&elem_tf);
+		let total_tf = parent_tf.multiply(&elem_tf);
 
 		let explicit_id = text.id.as_deref();
 		let effective_style = text.style.inherit_from(parent_style);
@@ -328,11 +328,41 @@ impl GraphBuilder {
 			_ => (Some(3), None),
 		};
 
+		let raw_x = text
+			.x
+			.or_else(|| text.children.first().and_then(|c| c.x))
+			.unwrap_or(0.0);
+		let raw_y = text
+			.y
+			.or_else(|| text.children.first().and_then(|c| c.y))
+			.unwrap_or(0.0);
+
+		let (tx, ty) = total_tf.transform_xy(raw_x, raw_y);
+		let (cx, cy) = view_box.center();
+		let max_dim = view_box.width.max(view_box.height);
+		let denom = if max_dim == 0.0 { 1.0 } else { max_dim };
+
+		let center_x = (tx - cx) / denom;
+		let center_y = -(ty - cy) / denom;
+
+		let scale = (total_tf.a * total_tf.a + total_tf.b * total_tf.b).sqrt();
+		let font_size = text
+			.font_size
+			.or_else(|| {
+				effective_style
+					.extra
+					.as_ref()
+					.and_then(|m| m.get("font-size"))
+					.and_then(|s| s.trim().trim_end_matches("px").trim_end_matches("pt").parse::<f64>().ok())
+			});
+		let size = font_size.map(|fs| (fs * scale) / denom);
+
 		let stext = SText {
 			name: name.clone(),
 			styled_text,
 			font,
 			style,
+			size,
 			line_spacing: None,
 			character_spacing: None,
 			red,
@@ -345,8 +375,8 @@ impl GraphBuilder {
 			wrap: Some(1),
 			layout_rotation: Some(1),
 			transform_rotation: Some(1),
-			center_x: None,
-			center_y: None,
+			center_x: Some(center_x),
+			center_y: Some(center_y),
 			view_info: pos,
 		};
 
@@ -1417,6 +1447,9 @@ mod tests {
 			assert_eq!(txt.styled_text, "Hello World");
 			assert_eq!(txt.font.as_deref(), Some("Roboto"));
 			assert_eq!(txt.style.as_deref(), Some("Bold"));
+			assert_eq!(txt.size, Some(24.0 / 400.0));
+			assert_eq!(txt.center_x, Some(-0.375));
+			assert_eq!(txt.center_y, Some(0.25));
 			assert_eq!(txt.red, Some(1.0));
 			assert!((txt.green.ok_or("missing green")? - 128.0 / 255.0).abs() < 1e-6);
 			assert_eq!(txt.blue, Some(0.0));
@@ -1491,6 +1524,9 @@ mod tests {
 			assert_eq!(txt.styled_text, "Card Title");
 			assert_eq!(txt.font.as_deref(), Some("Open Sans"));
 			assert_eq!(txt.style.as_deref(), Some("Bold Italic"));
+			assert_eq!(txt.size, Some(14.0 / 500.0));
+			assert_eq!(txt.center_x, Some(-0.48));
+			assert_eq!(txt.center_y, Some(0.46));
 			assert_eq!(txt.horizontal_justification, Some(0));
 			assert_eq!(txt.horizontal_left_center_right, Some(0));
 		}
@@ -1607,6 +1643,9 @@ mod tests {
 			assert_eq!(txt.styled_text, "RUST");
 			assert_eq!(txt.font.as_deref(), Some("Lato"));
 			assert_eq!(txt.style.as_deref(), Some("Bold"));
+			assert_eq!(txt.size, Some(32.0 / 500.0));
+			assert_eq!(txt.center_x, Some(-0.4));
+			assert_eq!(txt.center_y, Some(0.0));
 		} else {
 			return Err("Expected SText tool".into());
 		}

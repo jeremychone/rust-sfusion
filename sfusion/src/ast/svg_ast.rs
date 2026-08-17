@@ -418,6 +418,10 @@ impl SvgViewBox {
 		}
 	}
 
+	pub fn center(&self) -> (f64, f64) {
+		(self.min_x + self.width / 2.0, self.min_y + self.height / 2.0)
+	}
+
 	pub fn scaled_dimensions_to_max(&self, max_dimension: f64) -> (f64, f64) {
 		let max_dim = self.width.max(self.height);
 		if max_dim <= 0.0 {
