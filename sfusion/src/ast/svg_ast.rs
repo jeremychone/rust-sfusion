@@ -211,6 +211,7 @@ pub enum SvgElement {
 	Polyline(SvgPolyline),
 	Polygon(SvgPolygon),
 	Group(SvgGroup),
+	Text(SvgText),
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -290,6 +291,35 @@ pub struct SvgGroup {
 	pub children: Vec<SvgElement>,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SvgText {
+	pub id: Option<String>,
+	pub transform: Option<Transform2D>,
+	pub style: SvgStyle,
+	pub x: Option<f64>,
+	pub y: Option<f64>,
+	pub dx: Option<f64>,
+	pub dy: Option<f64>,
+	pub font_family: Option<String>,
+	pub font_size: Option<f64>,
+	pub font_weight: Option<String>,
+	pub font_style: Option<String>,
+	pub text_anchor: Option<String>,
+	pub content: String,
+	pub children: Vec<SvgTspan>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SvgTspan {
+	pub id: Option<String>,
+	pub style: SvgStyle,
+	pub x: Option<f64>,
+	pub y: Option<f64>,
+	pub dx: Option<f64>,
+	pub dy: Option<f64>,
+	pub content: String,
+}
+
 // endregion: --- Types
 
 // region:    --- Constructors
@@ -344,6 +374,7 @@ impl SvgElement {
 			SvgElement::Polyline(pl) => &pl.style,
 			SvgElement::Polygon(pg) => &pg.style,
 			SvgElement::Group(g) => &g.style,
+			SvgElement::Text(t) => &t.style,
 		}
 	}
 
@@ -357,6 +388,7 @@ impl SvgElement {
 			SvgElement::Polyline(pl) => &mut pl.style,
 			SvgElement::Polygon(pg) => &mut pg.style,
 			SvgElement::Group(g) => &mut g.style,
+			SvgElement::Text(t) => &mut t.style,
 		}
 	}
 }
@@ -467,6 +499,35 @@ mod tests {
 
 		assert_eq!(z_w, 1080.0);
 		assert_eq!(z_h, 1080.0);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_ast_svg_text_element() -> Result<()> {
+		// -- Setup & Fixtures
+		let text = SvgText {
+			id: Some("txt_1".to_string()),
+			content: "Sample Text".to_string(),
+			font_family: Some("Arial".to_string()),
+			font_size: Some(24.0),
+			..Default::default()
+		};
+		let mut element = SvgElement::Text(text);
+
+		// -- Exec
+		element.style_mut().stroke_width = Some(1.5);
+
+		// -- Check
+		assert_eq!(element.style().stroke_width, Some(1.5));
+		if let SvgElement::Text(t) = element {
+			assert_eq!(t.id.as_deref(), Some("txt_1"));
+			assert_eq!(t.content, "Sample Text");
+			assert_eq!(t.font_family.as_deref(), Some("Arial"));
+			assert_eq!(t.font_size, Some(24.0));
+		} else {
+			return Err("Expected SvgElement::Text".into());
+		}
 
 		Ok(())
 	}

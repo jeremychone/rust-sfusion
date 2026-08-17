@@ -36,11 +36,29 @@ pub fn build_fusion_doc(svg_doc: &SvgDoc) -> Result<FusionDoc> {
 	}
 
 	// Sort sPolygon tools alphabetically, followed by sMerge tools
-	builder.tools.sort_by(|a, b| match (a, b) {
-		(FusionTool::SPolygon(p1), FusionTool::SPolygon(p2)) => p1.name.cmp(&p2.name),
-		(FusionTool::SPolygon(_), FusionTool::SMerge(_)) => std::cmp::Ordering::Less,
-		(FusionTool::SMerge(_), FusionTool::SPolygon(_)) => std::cmp::Ordering::Greater,
-		(FusionTool::SMerge(m1), FusionTool::SMerge(m2)) => m1.name.cmp(&m2.name),
+	builder.tools.sort_by(|a, b| {
+		let rank = |t: &FusionTool| match t {
+			FusionTool::SPolygon(_) => 0,
+			FusionTool::SText(_) => 1,
+			FusionTool::SMerge(_) => 2,
+		};
+		let r_a = rank(a);
+		let r_b = rank(b);
+		if r_a != r_b {
+			r_a.cmp(&r_b)
+		} else {
+			let name_a = match a {
+				FusionTool::SPolygon(p) => &p.name,
+				FusionTool::SText(t) => &t.name,
+				FusionTool::SMerge(m) => &m.name,
+			};
+			let name_b = match b {
+				FusionTool::SPolygon(p) => &p.name,
+				FusionTool::SText(t) => &t.name,
+				FusionTool::SMerge(m) => &m.name,
+			};
+			name_a.cmp(name_b)
+		}
 	});
 
 	// If there are multiple top-level elements without a containing group, merge them
@@ -85,6 +103,7 @@ impl GraphBuilder {
 	) -> Result<Vec<String>> {
 		match element {
 			SvgElement::Group(group) => self.process_group(group, view_box, parent_tf, parent_style),
+			SvgElement::Text(text) => self.process_text(text, view_box, parent_tf, parent_style),
 			_ => self.process_shape(element, view_box, parent_tf, parent_style),
 		}
 	}
@@ -222,6 +241,9 @@ impl GraphBuilder {
 						FusionTool::SPolygon(poly) if poly.name == child_name => {
 							poly.name = new_name.clone();
 						}
+						FusionTool::SText(text) if text.name == child_name => {
+							text.name = new_name.clone();
+						}
 						FusionTool::SMerge(merge) if merge.name == child_name => {
 							merge.name = new_name.clone();
 						}
@@ -252,6 +274,262 @@ impl GraphBuilder {
 
 		self.tools.push(FusionTool::SMerge(s_merge));
 		Ok(vec![merge_name])
+	}
+
+	fn process_text(
+		&mut self,
+		text: &SvgText,
+		_view_box: &SvgViewBox,
+		parent_tf: Transform2D,
+		parent_style: &SvgStyle,
+	) -> Result<Vec<String>> {
+		let elem_tf = text.transform.unwrap_or_default();
+		let _total_tf = parent_tf.multiply(&elem_tf);
+
+		let explicit_id = text.id.as_deref();
+		let effective_style = text.style.inherit_from(parent_style);
+
+		let name = self.name_tracker.generate_unique_name(explicit_id.or(Some("stext")));
+		let pos = self.next_leaf_pos();
+
+		let styled_text = text.content.trim().to_string();
+
+		let font_family = text
+			.font_family
+			.as_deref()
+			.or_else(|| effective_style.extra.as_ref().and_then(|m| m.get("font-family").map(|s| s.as_str())));
+
+		let font = font_family
+			.and_then(clean_font_family);
+
+		let font_weight = text
+			.font_weight
+			.as_deref()
+			.or_else(|| effective_style.extra.as_ref().and_then(|m| m.get("font-weight").map(|s| s.as_str())));
+
+		let font_style = text
+			.font_style
+			.as_deref()
+			.or_else(|| effective_style.extra.as_ref().and_then(|m| m.get("font-style").map(|s| s.as_str())));
+
+		let style = map_font_style(font_weight, font_style);
+
+		let (red, green, blue, opacity) = resolve_color_and_opacity(&text.style, &effective_style);
+
+		let text_anchor = text
+			.text_anchor
+			.as_deref()
+			.or_else(|| effective_style.extra.as_ref().and_then(|m| m.get("text-anchor").map(|s| s.as_str())));
+
+		let (h_just, h_lcr) = match text_anchor.map(|a| a.trim().to_lowercase()).as_deref() {
+			Some("middle") | Some("center") => (Some(3), Some(1)),
+			Some("end") | Some("right") => (Some(2), Some(2)),
+			Some("start") | Some("left") => (Some(0), Some(0)),
+			_ => (Some(3), None),
+		};
+
+		let stext = SText {
+			name: name.clone(),
+			styled_text,
+			font,
+			style,
+			line_spacing: None,
+			character_spacing: None,
+			red,
+			green,
+			blue,
+			opacity,
+			vertical_justification: Some(3),
+			horizontal_justification: h_just,
+			horizontal_left_center_right: h_lcr,
+			wrap: Some(1),
+			layout_rotation: Some(1),
+			transform_rotation: Some(1),
+			center_x: None,
+			center_y: None,
+			view_info: pos,
+		};
+
+		self.tools.push(FusionTool::SText(stext));
+		Ok(vec![name])
+	}
+}
+
+fn clean_font_family(raw_font: &str) -> Option<String> {
+	let candidates = raw_font.split(',');
+	let mut generic_fallback = None;
+
+	for candidate in candidates {
+		let trimmed = candidate.trim().trim_matches('\'').trim_matches('"').trim();
+		if trimmed.is_empty() {
+			continue;
+		}
+
+		let is_generic = matches!(
+			trimmed.to_ascii_lowercase().as_str(),
+			"sans-serif"
+				| "serif"
+				| "monospace"
+				| "cursive"
+				| "fantasy"
+				| "system-ui"
+				| "ui-sans-serif"
+				| "ui-serif"
+				| "ui-monospace"
+		);
+
+		if is_generic {
+			if generic_fallback.is_none() {
+				generic_fallback = Some(trimmed.to_string());
+			}
+			continue;
+		}
+
+		let cleaned = sanitize_font_name(trimmed);
+		if !cleaned.is_empty() {
+			return Some(cleaned);
+		}
+	}
+
+	generic_fallback
+}
+
+fn sanitize_font_name(name: &str) -> String {
+	let mut s = name.trim();
+
+	if let Some(idx) = s.to_ascii_lowercase().find("-variablefont") {
+		s = &s[..idx];
+	} else if let Some(idx) = s.to_ascii_lowercase().find("_variablefont") {
+		s = &s[..idx];
+	}
+
+	const KNOWN_SUFFIXES: &[&str] = &[
+		"bolditalic",
+		"bold_italic",
+		"bold italic",
+		"semibolditalic",
+		"semibold_italic",
+		"semibold italic",
+		"extrabolditalic",
+		"extrabold_italic",
+		"extrabold italic",
+		"mediumitalic",
+		"medium_italic",
+		"medium italic",
+		"lightitalic",
+		"light_italic",
+		"light italic",
+		"thinitalic",
+		"thin_italic",
+		"thin italic",
+		"extralightitalic",
+		"extralight_italic",
+		"extralight italic",
+		"ultralightitalic",
+		"ultralight_italic",
+		"ultralight italic",
+		"semibold",
+		"semi_bold",
+		"semi bold",
+		"demibold",
+		"demi_bold",
+		"demi bold",
+		"extrabold",
+		"extra_bold",
+		"extra bold",
+		"ultrabold",
+		"ultra_bold",
+		"ultra bold",
+		"extralight",
+		"extra_light",
+		"extra light",
+		"ultralight",
+		"ultra_light",
+		"ultra light",
+		"regular",
+		"medium",
+		"italic",
+		"oblique",
+		"bold",
+		"light",
+		"thin",
+		"heavy",
+		"black",
+		"book",
+		"demi",
+	];
+
+	let lower = s.to_ascii_lowercase();
+	for suffix in KNOWN_SUFFIXES {
+		if lower.ends_with(suffix) {
+			let prefix_len = s.len() - suffix.len();
+			let prefix = &s[..prefix_len];
+			if prefix.ends_with('-') || prefix.ends_with('_') || prefix.ends_with(' ') {
+				let trimmed_prefix = prefix.trim_end_matches(['-', '_', ' ']);
+				if !trimmed_prefix.is_empty() {
+					s = trimmed_prefix;
+					break;
+				}
+			}
+		}
+	}
+
+	s.to_string()
+}
+
+fn capitalize_words(s: &str) -> String {
+	s.split_whitespace()
+		.map(|word| {
+			let mut chars = word.chars();
+			match chars.next() {
+				Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+				None => String::new(),
+			}
+		})
+		.collect::<Vec<_>>()
+		.join(" ")
+}
+
+fn map_font_style(weight: Option<&str>, style: Option<&str>) -> Option<String> {
+	let w = weight.map(|s| s.trim().to_lowercase());
+	let s = style.map(|s| s.trim().to_lowercase());
+
+	let is_italic = matches!(s.as_deref(), Some("italic") | Some("oblique"));
+
+	let base_weight = match w.as_deref() {
+		Some("100") | Some("thin") | Some("hairline") => Some("Thin"),
+		Some("200") | Some("extralight") | Some("extra-light") | Some("extra light") | Some("ultralight") | Some("ultra-light") | Some("ultra light") => Some("ExtraLight"),
+		Some("300") | Some("light") => Some("Light"),
+		Some("400") | Some("normal") | Some("regular") | Some("book") => Some("Regular"),
+		Some("500") | Some("medium") => Some("Medium"),
+		Some("600") | Some("semibold") | Some("semi-bold") | Some("semi bold") | Some("demibold") | Some("demi-bold") | Some("demi bold") => Some("SemiBold"),
+		Some("700") | Some("bold") | Some("bolder") => Some("Bold"),
+		Some("800") | Some("extrabold") | Some("extra-bold") | Some("extra bold") | Some("ultrabold") | Some("ultra-bold") | Some("ultra bold") => Some("ExtraBold"),
+		Some("900") | Some("black") | Some("heavy") => Some("Black"),
+		_ => None,
+	};
+
+	match (base_weight, is_italic) {
+		(Some("Regular"), true) | (None, true) => {
+			if base_weight.is_none() && let Some(w_str) = &w && !w_str.is_empty() {
+				let cap_weight = capitalize_words(w_str);
+				Some(format!("{cap_weight} Italic"))
+			} else {
+				Some("Italic".to_string())
+			}
+		}
+		(Some("Regular"), false) => Some("Regular".to_string()),
+		(Some(bw), true) => Some(format!("{bw} Italic")),
+		(Some(bw), false) => Some(bw.to_string()),
+		(None, false) => {
+			if let Some(w_str) = &w && !w_str.is_empty() {
+				Some(capitalize_words(w_str))
+			} else if let Some(s_str) = &s && !s_str.is_empty() && s_str != "normal" {
+				Some(capitalize_words(s_str))
+			} else {
+				None
+			}
+		}
 	}
 }
 
@@ -289,6 +567,7 @@ fn get_element_transform(element: &SvgElement) -> Option<Transform2D> {
 		SvgElement::Polyline(pl) => pl.transform,
 		SvgElement::Polygon(pg) => pg.transform,
 		SvgElement::Group(g) => g.transform,
+		SvgElement::Text(t) => t.transform,
 	}
 }
 
@@ -302,6 +581,7 @@ fn get_element_id(element: &SvgElement) -> Option<&str> {
 		SvgElement::Polyline(pl) => pl.id.as_deref(),
 		SvgElement::Polygon(pg) => pg.id.as_deref(),
 		SvgElement::Group(g) => g.id.as_deref(),
+		SvgElement::Text(t) => t.id.as_deref(),
 	}
 }
 
@@ -1093,6 +1373,242 @@ mod tests {
 			assert_eq!(p2.blue, Some(1.0));
 		} else {
 			return Err("Expected open_stroke SPolygon".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_stext_simple() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 400.0, 300.0)),
+			width: Some(400.0),
+			height: Some(300.0),
+			defs: SvgDefs::default(),
+			elements: vec![SvgElement::Text(SvgText {
+				id: Some("heading_txt".to_string()),
+				transform: None,
+				style: SvgStyle {
+					fill: Some(SvgPaint::Color(SvgColor::new_rgb(255, 128, 0))),
+					..Default::default()
+				},
+				x: Some(50.0),
+				y: Some(50.0),
+				dx: None,
+				dy: None,
+				font_family: Some("Roboto".to_string()),
+				font_size: Some(24.0),
+				font_weight: Some("bold".to_string()),
+				font_style: None,
+				text_anchor: Some("middle".to_string()),
+				content: "Hello World".to_string(),
+				children: Vec::new(),
+			})],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 1);
+		if let FusionTool::SText(txt) = &fusion_doc.tools[0] {
+			assert_eq!(txt.name, "heading_txt");
+			assert_eq!(txt.styled_text, "Hello World");
+			assert_eq!(txt.font.as_deref(), Some("Roboto"));
+			assert_eq!(txt.style.as_deref(), Some("Bold"));
+			assert_eq!(txt.red, Some(1.0));
+			assert!((txt.green.ok_or("missing green")? - 128.0 / 255.0).abs() < 1e-6);
+			assert_eq!(txt.blue, Some(0.0));
+			assert_eq!(txt.horizontal_justification, Some(3));
+			assert_eq!(txt.horizontal_left_center_right, Some(1));
+		} else {
+			return Err("Expected SText tool".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_stext_in_group_with_shapes() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 500.0, 500.0)),
+			width: Some(500.0),
+			height: Some(500.0),
+			defs: SvgDefs::default(),
+			elements: vec![SvgElement::Group(SvgGroup {
+				id: Some("card_group".to_string()),
+				transform: None,
+				style: SvgStyle::default(),
+				children: vec![
+					SvgElement::Rect(SvgRect {
+						id: Some("bg_box".to_string()),
+						transform: None,
+						style: SvgStyle::default(),
+						x: 0.0,
+						y: 0.0,
+						width: 200.0,
+						height: 100.0,
+						rx: None,
+						ry: None,
+					}),
+					SvgElement::Text(SvgText {
+						id: Some("label".to_string()),
+						transform: None,
+						style: SvgStyle::default(),
+						x: Some(10.0),
+						y: Some(20.0),
+						dx: None,
+						dy: None,
+						font_family: Some("'Open Sans'".to_string()),
+						font_size: Some(14.0),
+						font_weight: Some("700".to_string()),
+						font_style: Some("italic".to_string()),
+						text_anchor: Some("start".to_string()),
+						content: "Card Title".to_string(),
+						children: Vec::new(),
+					}),
+				],
+			})],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 3);
+		let polygon_tool = fusion_doc.tools.iter().find(|t| matches!(t, FusionTool::SPolygon(_)));
+		let text_tool = fusion_doc.tools.iter().find(|t| matches!(t, FusionTool::SText(_)));
+		let merge_tool = fusion_doc.tools.iter().find(|t| matches!(t, FusionTool::SMerge(_)));
+
+		assert!(polygon_tool.is_some());
+		assert!(text_tool.is_some());
+		assert!(merge_tool.is_some());
+
+		if let Some(FusionTool::SText(txt)) = text_tool {
+			assert_eq!(txt.name, "label");
+			assert_eq!(txt.styled_text, "Card Title");
+			assert_eq!(txt.font.as_deref(), Some("Open Sans"));
+			assert_eq!(txt.style.as_deref(), Some("Bold Italic"));
+			assert_eq!(txt.horizontal_justification, Some(0));
+			assert_eq!(txt.horizontal_left_center_right, Some(0));
+		}
+
+		if let Some(FusionTool::SMerge(m)) = merge_tool {
+			assert_eq!(m.name, "card_group");
+			assert_eq!(m.inputs, vec!["bg_box", "label"]);
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_clean_font_family() -> Result<()> {
+		// -- Exec & Check
+		assert_eq!(
+			clean_font_family("Lato-Bold, Lato, sans-serif").as_deref(),
+			Some("Lato")
+		);
+		assert_eq!(
+			clean_font_family("'Open Sans-SemiBold', 'Open Sans', sans-serif").as_deref(),
+			Some("Open Sans")
+		);
+		assert_eq!(
+			clean_font_family("Roboto-Regular").as_deref(),
+			Some("Roboto")
+		);
+		assert_eq!(
+			clean_font_family("'Montserrat-ExtraBold'").as_deref(),
+			Some("Montserrat")
+		);
+		assert_eq!(
+			clean_font_family("Fira Code, monospace").as_deref(),
+			Some("Fira Code")
+		);
+		assert_eq!(
+			clean_font_family("sans-serif").as_deref(),
+			Some("sans-serif")
+		);
+		assert_eq!(
+			clean_font_family("Inter-VariableFont_opsz,wght").as_deref(),
+			Some("Inter")
+		);
+		assert_eq!(clean_font_family("   ").as_deref(), None);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_map_font_style() -> Result<()> {
+		// -- Exec & Check
+		assert_eq!(map_font_style(Some("700"), None).as_deref(), Some("Bold"));
+		assert_eq!(map_font_style(Some("bold"), None).as_deref(), Some("Bold"));
+		assert_eq!(map_font_style(Some("700"), Some("italic")).as_deref(), Some("Bold Italic"));
+		assert_eq!(map_font_style(Some("400"), None).as_deref(), Some("Regular"));
+		assert_eq!(map_font_style(Some("normal"), None).as_deref(), Some("Regular"));
+		assert_eq!(map_font_style(Some("400"), Some("italic")).as_deref(), Some("Italic"));
+		assert_eq!(map_font_style(None, Some("italic")).as_deref(), Some("Italic"));
+		assert_eq!(map_font_style(Some("300"), None).as_deref(), Some("Light"));
+		assert_eq!(map_font_style(Some("light"), Some("italic")).as_deref(), Some("Light Italic"));
+		assert_eq!(map_font_style(Some("100"), None).as_deref(), Some("Thin"));
+		assert_eq!(map_font_style(Some("200"), None).as_deref(), Some("ExtraLight"));
+		assert_eq!(map_font_style(Some("500"), None).as_deref(), Some("Medium"));
+		assert_eq!(map_font_style(Some("600"), None).as_deref(), Some("SemiBold"));
+		assert_eq!(map_font_style(Some("800"), None).as_deref(), Some("ExtraBold"));
+		assert_eq!(map_font_style(Some("900"), None).as_deref(), Some("Black"));
+		assert_eq!(map_font_style(Some("black"), Some("italic")).as_deref(), Some("Black Italic"));
+		assert_eq!(map_font_style(None, None), None);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_fusion_graph_builder_nested_tspan_flattening() -> Result<()> {
+		// -- Setup & Fixtures
+		let svg_doc = SvgDoc {
+			view_box: Some(SvgViewBox::new(0.0, 0.0, 500.0, 200.0)),
+			width: Some(500.0),
+			height: Some(200.0),
+			defs: SvgDefs::default(),
+			elements: vec![SvgElement::Text(SvgText {
+				id: Some("brand".to_string()),
+				transform: None,
+				style: SvgStyle::default(),
+				x: Some(50.0),
+				y: Some(100.0),
+				dx: None,
+				dy: None,
+				font_family: Some("Lato-Bold, Lato, sans-serif".to_string()),
+				font_size: Some(32.0),
+				font_weight: Some("700".to_string()),
+				font_style: None,
+				text_anchor: None,
+				content: "RUST".to_string(),
+				children: vec![SvgTspan {
+					id: None,
+					style: SvgStyle::default(),
+					x: None,
+					y: None,
+					dx: None,
+					dy: None,
+					content: "U".to_string(),
+				}],
+			})],
+		};
+
+		// -- Exec
+		let fusion_doc = build_fusion_doc(&svg_doc)?;
+
+		// -- Check
+		assert_eq!(fusion_doc.tools.len(), 1);
+		if let FusionTool::SText(txt) = &fusion_doc.tools[0] {
+			assert_eq!(txt.name, "brand");
+			assert_eq!(txt.styled_text, "RUST");
+			assert_eq!(txt.font.as_deref(), Some("Lato"));
+			assert_eq!(txt.style.as_deref(), Some("Bold"));
+		} else {
+			return Err("Expected SText tool".into());
 		}
 
 		Ok(())

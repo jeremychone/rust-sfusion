@@ -9,6 +9,7 @@ pub struct FusionDoc {
 pub enum FusionTool {
 	SPolygon(SPolygon),
 	SMerge(SMerge),
+	SText(SText),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +31,29 @@ pub struct SPolygon {
 pub struct SMerge {
 	pub name: String,
 	pub inputs: Vec<String>,
+	pub view_info: ViewInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SText {
+	pub name: String,
+	pub styled_text: String,
+	pub font: Option<String>,
+	pub style: Option<String>,
+	pub line_spacing: Option<f64>,
+	pub character_spacing: Option<f64>,
+	pub red: Option<f64>,
+	pub green: Option<f64>,
+	pub blue: Option<f64>,
+	pub opacity: Option<f64>,
+	pub vertical_justification: Option<i32>,
+	pub horizontal_justification: Option<i32>,
+	pub horizontal_left_center_right: Option<i32>,
+	pub wrap: Option<i32>,
+	pub layout_rotation: Option<i32>,
+	pub transform_rotation: Option<i32>,
+	pub center_x: Option<f64>,
+	pub center_y: Option<f64>,
 	pub view_info: ViewInfo,
 }
 
@@ -86,6 +110,16 @@ impl ViewInfo {
 	}
 }
 
+impl SText {
+	pub fn new(name: impl Into<String>, styled_text: impl Into<String>) -> Self {
+		Self {
+			name: name.into(),
+			styled_text: styled_text.into(),
+			..Default::default()
+		}
+	}
+}
+
 // endregion: --- Constructors
 
 // region:    --- Froms
@@ -102,4 +136,44 @@ impl From<SMerge> for FusionTool {
 	}
 }
 
+impl From<SText> for FusionTool {
+	fn from(val: SText) -> Self {
+		Self::SText(val)
+	}
+}
+
 // endregion: --- Froms
+
+// region:    --- Tests
+
+#[cfg(test)]
+mod tests {
+	type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+
+	use super::*;
+
+	#[test]
+	fn test_ast_fusion_stext_creation() -> Result<()> {
+		// -- Setup & Fixtures
+		let text_tool = SText {
+			name: "sText1".to_string(),
+			styled_text: "Hello Fusion".to_string(),
+			font: Some("Open Sans".to_string()),
+			style: Some("Bold".to_string()),
+			vertical_justification: Some(3),
+			horizontal_justification: Some(3),
+			view_info: ViewInfo::new(3520.0, -379.5),
+			..Default::default()
+		};
+
+		// -- Exec
+		let tool: FusionTool = text_tool.clone().into();
+
+		// -- Check
+		assert_eq!(tool, FusionTool::SText(text_tool));
+
+		Ok(())
+	}
+}
+
+// endregion: --- Tests

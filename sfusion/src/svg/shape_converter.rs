@@ -19,6 +19,7 @@ pub fn element_to_segments(element: &SvgElement) -> Result<Vec<NormalizedSegment
 		SvgElement::Polyline(polyline) => Ok(polyline_to_segments(polyline)),
 		SvgElement::Polygon(polygon) => Ok(polygon_to_segments(polygon)),
 		SvgElement::Group(_) => Ok(Vec::new()),
+		SvgElement::Text(_) => Ok(Vec::new()),
 	}
 }
 

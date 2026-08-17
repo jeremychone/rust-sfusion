@@ -35,6 +35,8 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 
 	let mut group_stack: Vec<SvgGroup> = Vec::new();
 	let mut current_gradient: Option<CurrentGradient> = None;
+	let mut current_text: Option<SvgText> = None;
+	let mut current_tspan: Option<SvgTspan> = None;
 	let mut buf = Vec::new();
 
 	loop {
@@ -62,6 +64,12 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 								CurrentGradient::Radial(r) => r.stops.push(stop),
 							}
 						}
+					}
+					b"text" => {
+						current_text = Some(parse_text_start(e)?);
+					}
+					b"tspan" => {
+						current_tspan = Some(parse_tspan_start(e)?);
 					}
 					b"g" => {
 						let id = get_attribute_str(e, b"id")?;
@@ -104,6 +112,16 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 							}
 						}
 					}
+					b"text" => {
+						let text = parse_text_start(e)?;
+						append_element(&mut doc, &mut group_stack, SvgElement::Text(text));
+					}
+					b"tspan" => {
+						let tspan = parse_tspan_start(e)?;
+						if let Some(ref mut text) = current_text {
+							text.children.push(tspan);
+						}
+					}
 					_ => {
 						if let Some(element) = parse_element(e)? {
 							append_element(&mut doc, &mut group_stack, element);
@@ -126,6 +144,18 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 							}
 						}
 					}
+					b"tspan" => {
+						if let Some(tspan) = current_tspan.take()
+							&& let Some(ref mut text) = current_text
+						{
+							text.children.push(tspan);
+						}
+					}
+					b"text" => {
+						if let Some(text) = current_text.take() {
+							append_element(&mut doc, &mut group_stack, SvgElement::Text(text));
+						}
+					}
 					b"g" => {
 						if let Some(group) = group_stack.pop() {
 							let group_elem = SvgElement::Group(group);
@@ -133,6 +163,26 @@ pub fn parse_svg(xml: &str) -> Result<SvgDoc> {
 						}
 					}
 					_ => {}
+				}
+			}
+			Ok(Event::Text(ref e)) => {
+				let text_val = e
+					.unescape()
+					.map_err(|err| Error::custom(format!("Invalid text content: {err}")))?;
+				if let Some(ref mut tspan) = current_tspan {
+					tspan.content.push_str(&text_val);
+				}
+				if let Some(ref mut text) = current_text {
+					text.content.push_str(&text_val);
+				}
+			}
+			Ok(Event::CData(ref e)) => {
+				let text_val = String::from_utf8_lossy(e.as_ref());
+				if let Some(ref mut tspan) = current_tspan {
+					tspan.content.push_str(&text_val);
+				}
+				if let Some(ref mut text) = current_text {
+					text.content.push_str(&text_val);
 				}
 			}
 			Ok(Event::Eof) => break,
@@ -210,6 +260,84 @@ fn parse_radial_gradient(e: &quick_xml::events::BytesStart<'_>) -> Result<SvgRad
 		fy,
 		stops: Vec::new(),
 		transform,
+	})
+}
+
+fn parse_text_start(e: &quick_xml::events::BytesStart<'_>) -> Result<SvgText> {
+	let id = get_attribute_str(e, b"id")?;
+	let transform = get_attribute_transform(e)?;
+	let style = parse_element_style(e)?;
+	let x = get_attribute_f64(e, b"x")?;
+	let y = get_attribute_f64(e, b"y")?;
+	let dx = get_attribute_f64(e, b"dx")?;
+	let dy = get_attribute_f64(e, b"dy")?;
+
+	let mut font_family = get_attribute_str(e, b"font-family")?
+		.or_else(|| get_attribute_str(e, b"font_family").ok().flatten());
+	let mut font_size = get_attribute_f64(e, b"font-size")?
+		.or_else(|| get_attribute_f64(e, b"font_size").ok().flatten());
+	let mut font_weight = get_attribute_str(e, b"font-weight")?
+		.or_else(|| get_attribute_str(e, b"font_weight").ok().flatten());
+	let mut font_style = get_attribute_str(e, b"font-style")?
+		.or_else(|| get_attribute_str(e, b"font_style").ok().flatten());
+	let mut text_anchor = get_attribute_str(e, b"text-anchor")?
+		.or_else(|| get_attribute_str(e, b"text_anchor").ok().flatten());
+
+	if let Some(ref extra) = style.extra {
+		if font_family.is_none() {
+			font_family = extra.get("font-family").cloned().or_else(|| extra.get("font_family").cloned());
+		}
+		if font_size.is_none() {
+			font_size = extra
+				.get("font-size")
+				.or_else(|| extra.get("font_size"))
+				.and_then(|v| parse_dimension(v));
+		}
+		if font_weight.is_none() {
+			font_weight = extra.get("font-weight").cloned().or_else(|| extra.get("font_weight").cloned());
+		}
+		if font_style.is_none() {
+			font_style = extra.get("font-style").cloned().or_else(|| extra.get("font_style").cloned());
+		}
+		if text_anchor.is_none() {
+			text_anchor = extra.get("text-anchor").cloned().or_else(|| extra.get("text_anchor").cloned());
+		}
+	}
+
+	Ok(SvgText {
+		id,
+		transform,
+		style,
+		x,
+		y,
+		dx,
+		dy,
+		font_family,
+		font_size,
+		font_weight,
+		font_style,
+		text_anchor,
+		content: String::new(),
+		children: Vec::new(),
+	})
+}
+
+fn parse_tspan_start(e: &quick_xml::events::BytesStart<'_>) -> Result<SvgTspan> {
+	let id = get_attribute_str(e, b"id")?;
+	let style = parse_element_style(e)?;
+	let x = get_attribute_f64(e, b"x")?;
+	let y = get_attribute_f64(e, b"y")?;
+	let dx = get_attribute_f64(e, b"dx")?;
+	let dy = get_attribute_f64(e, b"dy")?;
+
+	Ok(SvgTspan {
+		id,
+		style,
+		x,
+		y,
+		dx,
+		dy,
+		content: String::new(),
 	})
 }
 
@@ -727,6 +855,128 @@ mod tests {
 			}
 		} else {
 			return Err("Expected top group".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_svg_parser_text_element_simple() -> Result<()> {
+		// -- Setup & Fixtures
+		let xml = r##"<svg viewBox="0 0 400 200">
+			<text id="title_txt" x="20" y="50" font-family="Roboto" font-size="28" font-weight="bold" font-style="italic" text-anchor="middle" fill="#ff5500">
+				Hello Fusion
+			</text>
+		</svg>"##;
+
+		// -- Exec
+		let doc = parse_svg(xml)?;
+
+		// -- Check
+		assert_eq!(doc.elements.len(), 1);
+		match &doc.elements[0] {
+			SvgElement::Text(t) => {
+				assert_eq!(t.id.as_deref(), Some("title_txt"));
+				assert_eq!(t.x, Some(20.0));
+				assert_eq!(t.y, Some(50.0));
+				assert_eq!(t.font_family.as_deref(), Some("Roboto"));
+				assert_eq!(t.font_size, Some(28.0));
+				assert_eq!(t.font_weight.as_deref(), Some("bold"));
+				assert_eq!(t.font_style.as_deref(), Some("italic"));
+				assert_eq!(t.text_anchor.as_deref(), Some("middle"));
+				assert_eq!(t.content, "Hello Fusion");
+				assert_eq!(t.style.fill, Some(SvgPaint::Color(SvgColor::new_rgb(255, 85, 0))));
+			}
+			_ => return Err("Expected Text element".into()),
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_svg_parser_text_with_inline_style() -> Result<()> {
+		// -- Setup & Fixtures
+		let xml = r#"<svg viewBox="0 0 300 100">
+			<text id="styled_text" x="10" y="30" style="font-family: 'Open Sans'; font-size: 18px; font-weight: 600; text-anchor: end; fill: #112233">
+				Styled Text
+			</text>
+		</svg>"#;
+
+		// -- Exec
+		let doc = parse_svg(xml)?;
+
+		// -- Check
+		assert_eq!(doc.elements.len(), 1);
+		if let SvgElement::Text(t) = &doc.elements[0] {
+			assert_eq!(t.id.as_deref(), Some("styled_text"));
+			assert_eq!(t.font_family.as_deref(), Some("'Open Sans'"));
+			assert_eq!(t.font_size, Some(18.0));
+			assert_eq!(t.font_weight.as_deref(), Some("600"));
+			assert_eq!(t.text_anchor.as_deref(), Some("end"));
+			assert_eq!(t.content, "Styled Text");
+		} else {
+			return Err("Expected Text element".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_svg_parser_text_with_tspans() -> Result<()> {
+		// -- Setup & Fixtures
+		let xml = r#"<svg viewBox="0 0 500 200">
+			<text id="multiline" x="10" y="40">
+				Base text
+				<tspan id="span_1" x="10" y="70" fill="red">First line</tspan>
+				<tspan id="span_2" x="10" y="100" fill="blue">Second line</tspan>
+			</text>
+		</svg>"#;
+
+		// -- Exec
+		let doc = parse_svg(xml)?;
+
+		// -- Check
+		assert_eq!(doc.elements.len(), 1);
+		if let SvgElement::Text(t) = &doc.elements[0] {
+			assert_eq!(t.id.as_deref(), Some("multiline"));
+			assert_eq!(t.content, "Base textFirst lineSecond line");
+			assert_eq!(t.children.len(), 2);
+			assert_eq!(t.children[0].id.as_deref(), Some("span_1"));
+			assert_eq!(t.children[0].x, Some(10.0));
+			assert_eq!(t.children[0].y, Some(70.0));
+			assert_eq!(t.children[0].content, "First line");
+			assert_eq!(t.children[0].style.fill, Some(SvgPaint::Color(SvgColor::new_rgb(255, 0, 0))));
+
+			assert_eq!(t.children[1].id.as_deref(), Some("span_2"));
+			assert_eq!(t.children[1].content, "Second line");
+		} else {
+			return Err("Expected Text element".into());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_svg_parser_nested_tspan_flattening() -> Result<()> {
+		// -- Setup & Fixtures
+		let xml = r#"<svg viewBox="0 0 500 200">
+			<text id="brand" x="50" y="100">
+				R<tspan fill="red">U</tspan>ST
+			</text>
+		</svg>"#;
+
+		// -- Exec
+		let doc = parse_svg(xml)?;
+
+		// -- Check
+		assert_eq!(doc.elements.len(), 1);
+		if let SvgElement::Text(t) = &doc.elements[0] {
+			assert_eq!(t.id.as_deref(), Some("brand"));
+			assert_eq!(t.content, "RUST");
+			assert_eq!(t.children.len(), 1);
+			assert_eq!(t.children[0].content, "U");
+		} else {
+			return Err("Expected Text element".into());
 		}
 
 		Ok(())
